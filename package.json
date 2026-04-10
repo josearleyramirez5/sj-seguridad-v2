@@ -1,0 +1,15 @@
+{
+  "name": "sj-seguridad-v2",
+  "version": "2.0.0",
+  "description": "SJ Seguridad v2 - Platform de supervisión de seguridad",
+  "private": true,
+  "scripts": {
+    "dev": "cd backend && npm run dev",
+    "build": "cd backend && npm run build",
+    "start": "cd backend && npm start",
+    "type-check": "cd backend && tsc --noEmit"
+  },
+  "keywords": ["security", "supervision", "postgresql"],
+  "author": "SJ Seguridad",
+  "license": "ISC"
+}
