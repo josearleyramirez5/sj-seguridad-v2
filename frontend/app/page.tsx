@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { LoginView } from "@/components/login-view"
 import { DashboardView } from "@/components/dashboard-view"
 import { RoundFormView } from "@/components/round-form-view"
@@ -13,24 +13,56 @@ import { toast } from "sonner"
 type AppView = "login" | "dashboard" | "form" | "reports" | "profile"
 type NavView = "dashboard" | "reports" | "profile"
 
+interface User {
+  id: string
+  email: string
+  name: string
+  role: 'admin' | 'supervisor' | 'user'
+}
+
 export default function SJSeguridadApp() {
   const [currentView, setCurrentView] = useState<AppView>("login")
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [supervisorName, setSupervisorName] = useState("")
+  const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  const handleLogin = (email: string, password: string) => {
-    // Ready for Firebase signInWithEmailAndPassword integration
-    // For now, simulate successful login
+  // Check if user is already logged in
+  useEffect(() => {
+    const token = localStorage.getItem('token')
+    const userCached = localStorage.getItem('user')
+    
+    if (token && userCached) {
+      try {
+        const userData = JSON.parse(userCached)
+        setUser(userData)
+        setSupervisorName(userData.name)
+        setIsAuthenticated(true)
+        setCurrentView("dashboard")
+      } catch (error) {
+        console.error("Error parsing cached user:", error)
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+      }
+    }
+    setIsLoading(false)
+  }, [])
+
+  const handleLogin = (userData: User) => {
+    setUser(userData)
+    setSupervisorName(userData.name)
     setIsAuthenticated(true)
-    setSupervisorName("Carlos Rodríguez")
     setCurrentView("dashboard")
-    toast.success("Sesión iniciada correctamente")
+    toast.success(`Bienvenido, ${userData.name}`)
   }
 
   const handleLogout = () => {
+    setUser(null)
     setIsAuthenticated(false)
     setSupervisorName("")
     setCurrentView("login")
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
     toast.info("Sesión cerrada")
   }
 
@@ -49,6 +81,17 @@ export default function SJSeguridadApp() {
 
   const handleNavigate = (view: NavView) => {
     setCurrentView(view)
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p>Cargando...</p>
+        </div>
+      </div>
+    )
   }
 
   // Show login if not authenticated

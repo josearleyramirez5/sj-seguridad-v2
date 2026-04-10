@@ -1,28 +1,44 @@
 "use client"
 
 import { useState } from "react"
-import { Mail, Lock, Shield } from "lucide-react"
+import { Mail, Lock, Shield, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { apiService } from "@/lib/api.service"
 
 interface LoginViewProps {
-  onLogin: (email: string, password: string) => void
+  onLogin: (user: any) => void
 }
 
 export function LoginView({ onLogin }: LoginViewProps) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError("")
     setIsLoading(true)
-    // Simulate login - ready for Firebase signInWithEmailAndPassword
-    await new Promise(resolve => setTimeout(resolve, 800))
-    onLogin(email, password)
-    setIsLoading(false)
+
+    try {
+      const response = await apiService.login(email.toLowerCase(), password)
+      
+      // Guardar token y user en localStorage
+      localStorage.setItem('token', response.token)
+      localStorage.setItem('user', JSON.stringify(response.user))
+      
+      // Llamar callback con usuario
+      onLogin(response.user)
+    } catch (err: any) {
+      setError(err.message || "Error al iniciar sesión. Verifica tus credenciales.")
+      console.error("Login error:", err)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -39,6 +55,12 @@ export function LoginView({ onLogin }: LoginViewProps) {
         </CardHeader>
         <CardContent className="pt-6">
           <form onSubmit={handleSubmit} className="space-y-5">
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
             <div className="space-y-2">
               <Label htmlFor="email" className="text-foreground font-medium">
                 Correo Electrónico
@@ -53,6 +75,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-10 h-12 text-base"
                   required
+                  disabled={isLoading}
                 />
               </div>
             </div>
@@ -70,13 +93,14 @@ export function LoginView({ onLogin }: LoginViewProps) {
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-10 h-12 text-base"
                   required
+                  disabled={isLoading}
                 />
               </div>
             </div>
             <Button 
               type="submit" 
               className="w-full h-12 text-base font-semibold mt-6"
-              disabled={isLoading}
+              disabled={isLoading || !email || !password}
             >
               {isLoading ? "Iniciando sesión..." : "Iniciar Sesión"}
             </Button>

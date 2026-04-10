@@ -1,31 +1,63 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { ClipboardList, AlertTriangle, MapPin, Plus, Clock, Building2 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
+import { apiService, Round, Report } from "@/lib/api.service"
 
 interface DashboardViewProps {
   supervisorName: string
   onNewRound: () => void
 }
 
-const mockRecentActivity = [
-  { id: 1, client: "Banco Nacional", post: "Sede Principal", timestamp: "Hoy, 10:30 AM" },
-  { id: 2, client: "Centro Comercial Plaza", post: "Entrada Norte", timestamp: "Hoy, 09:15 AM" },
-  { id: 3, client: "Edificio Corporativo ABC", post: "Recepción", timestamp: "Ayer, 16:45 PM" },
-  { id: 4, client: "Hospital Central", post: "Urgencias", timestamp: "Ayer, 14:20 PM" },
-  { id: 5, client: "Universidad Nacional", post: "Biblioteca", timestamp: "Ayer, 11:00 AM" },
-]
-
 export function DashboardView({ supervisorName, onNewRound }: DashboardViewProps) {
+  const [rounds, setRounds] = useState<Round[]>([])
+  const [reports, setReports] = useState<Report[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [roundsData, reportsData] = await Promise.all([
+          apiService.getRounds(),
+          apiService.getReports(),
+        ])
+        setRounds(roundsData)
+        setReports(reportsData)
+      } catch (error) {
+        console.error("Error loading dashboard data:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadData()
+  }, [])
+
   const currentDate = new Date().toLocaleDateString("es-CO", {
     weekday: "long",
     year: "numeric",
     month: "long",
     day: "numeric",
   })
+
+  // Calcular estadísticas
+  const totalRoundToday = rounds.filter(r => {
+    const rDate = new Date(r.createdAt)
+    const today = new Date()
+    return rDate.toDateString() === today.toDateString()
+  }).length
+
+  const alerts = reports.filter(r => r.status === 'pending').length
+  const totalPosts = new Set(reports.map(r => r.supervised_by)).size
+
+  // Últimos reportes
+  const recentReports = reports
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 5)
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -73,7 +105,7 @@ export function DashboardView({ supervisorName, onNewRound }: DashboardViewProps
                   <ClipboardList className="h-5 w-5 text-primary" />
                 </div>
               </div>
-              <p className="text-2xl font-bold text-foreground">8</p>
+              <p className="text-2xl font-bold text-foreground">{totalRoundToday}</p>
               <p className="text-xs text-muted-foreground mt-1">Rondas Hoy</p>
             </CardContent>
           </Card>
@@ -85,7 +117,7 @@ export function DashboardView({ supervisorName, onNewRound }: DashboardViewProps
                   <AlertTriangle className="h-5 w-5 text-destructive" />
                 </div>
               </div>
-              <p className="text-2xl font-bold text-foreground">3</p>
+              <p className="text-2xl font-bold text-foreground">{alerts}</p>
               <p className="text-xs text-muted-foreground mt-1">Alertas</p>
             </CardContent>
           </Card>
@@ -97,7 +129,7 @@ export function DashboardView({ supervisorName, onNewRound }: DashboardViewProps
                   <MapPin className="h-5 w-5 text-success" />
                 </div>
               </div>
-              <p className="text-2xl font-bold text-foreground">12</p>
+              <p className="text-2xl font-bold text-foreground">{totalPosts}</p>
               <p className="text-xs text-muted-foreground mt-1">Puestos</p>
             </CardContent>
           </Card>
@@ -110,24 +142,28 @@ export function DashboardView({ supervisorName, onNewRound }: DashboardViewProps
             <CardDescription>Últimos reportes enviados</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {mockRecentActivity.map((activity) => (
-              <div
-                key={activity.id}
-                className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-              >
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 shrink-0">
-                  <Building2 className="h-5 w-5 text-primary" />
+            {recentReports.length > 0 ? (
+              recentReports.map((report) => (
+                <div
+                  key={report.id}
+                  className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 shrink-0">
+                    <Building2 className="h-5 w-5 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-foreground truncate">{report.supervised_by}</p>
+                    <p className="text-sm text-muted-foreground truncate">{report.observations.substring(0, 30)}...</p>
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                    <Clock className="h-3 w-3" />
+                    <span>{new Date(report.timestamp).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}</span>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-foreground truncate">{activity.client}</p>
-                  <p className="text-sm text-muted-foreground truncate">{activity.post}</p>
-                </div>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-                  <Clock className="h-3 w-3" />
-                  <span>{activity.timestamp}</span>
-                </div>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-center text-muted-foreground py-4">No hay reportes aún</p>
+            )}
           </CardContent>
         </Card>
       </main>
