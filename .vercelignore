@@ -1,0 +1,11 @@
+backend/
+database/
+MIGRACION_COMPONENTES.md
+PLAN_TRABAJO.md
+POSTGRESQL_INSTALL.md
+Procfile
+QUICK_START.md
+railway.json
+README.md
+REQUERIMIENTOS_COMPLETOS.md
+package.json
