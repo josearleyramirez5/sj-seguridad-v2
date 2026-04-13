@@ -1,3 +1,4 @@
 {
-  "rootDirectory": "frontend"
+  "buildCommand": "pnpm run build",
+  "outputDirectory": ".next"
 }
