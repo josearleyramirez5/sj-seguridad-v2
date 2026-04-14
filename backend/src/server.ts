@@ -15,6 +15,7 @@ dotenv.config();
 
 const app: Express = express();
 const PORT = process.env.PORT || 5000;
+const isProduction = process.env.NODE_ENV === 'production';
 
 const configuredOrigins = (process.env.CORS_ORIGIN || '')
   .split(',')
@@ -49,7 +50,23 @@ app.use(cors({
     callback(new Error(`Origin not allowed by CORS: ${origin}`));
   },
 }));
-app.use(morgan('combined'));
+app.use(morgan(isProduction ? 'tiny' : 'combined', {
+  skip: (req, res) => {
+    if (req.method === 'OPTIONS') {
+      return true;
+    }
+
+    if (req.path === '/health' || req.path === '/api/health') {
+      return true;
+    }
+
+    if (isProduction && res.statusCode < 400) {
+      return true;
+    }
+
+    return false;
+  },
+}));
 app.use(express.json());
 
 const healthHandler = async (req: Request, res: Response) => {
@@ -82,7 +99,8 @@ app.use((err: any, req: Request, res: Response) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📊 Database: ${process.env.DATABASE_URL}`);
+  console.log(`📊 Database configured: ${Boolean(process.env.DATABASE_URL)}`);
+  console.log(`🌐 Allowed origins: ${allowedOrigins.join(', ')}`);
 });
 
 export default app;
