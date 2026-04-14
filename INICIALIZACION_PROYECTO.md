@@ -250,6 +250,7 @@ NEXT_PUBLIC_API_URL=https://sj-seguridad-v2-production.up.railway.app/api
 - [INICIALIZACION_PROYECTO.md](INICIALIZACION_PROYECTO.md): guia principal de instalacion y ejecucion
 - [PASO_A_PASO_DE_INSTALACION.md](PASO_A_PASO_DE_INSTALACION.md): instalacion detallada desde GitHub hasta levantar el proyecto en otra maquina
 - [DIAGRAMAS_FUNCIONALES_MERMAID.md](DIAGRAMAS_FUNCIONALES_MERMAID.md): diagramas funcionales para la entrega
+- [CHANGELOG.md](CHANGELOG.md): historial resumido de cambios y validaciones recientes
 - [database/schema.sql](database/schema.sql): esquema real de PostgreSQL
 
 ## Observaciones finales

@@ -23,6 +23,7 @@ Plataforma web de supervision de seguridad construida con Next.js, Express, Type
 - [INICIALIZACION_PROYECTO.md](INICIALIZACION_PROYECTO.md): instalacion, configuracion, ejecucion y despliegue
 - [PASO_A_PASO_DE_INSTALACION.md](PASO_A_PASO_DE_INSTALACION.md): guia completa desde GitHub hasta ejecutar la app en otro ordenador
 - [DIAGRAMAS_FUNCIONALES_MERMAID.md](DIAGRAMAS_FUNCIONALES_MERMAID.md): MER, diagrama de clases y diagrama de casos de uso
+- [CHANGELOG.md](CHANGELOG.md): resumen formal de cambios y validacion de la version actual
 - [database/schema.sql](database/schema.sql): esquema real de la base de datos
 
 ## URLs de produccion
