@@ -1,6 +1,8 @@
 import axios, { AxiosError } from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+const localFallbackApiUrl = 'http://localhost:5000/api';
+const API_URL = configuredApiUrl || localFallbackApiUrl;
 const HEALTH_URL = `${API_URL.replace(/\/api\/?$/, '')}/health`;
 
 type BackendRole = 'SUPER_ADMIN' | 'SUPERVISOR' | 'GUARD';
@@ -205,6 +207,10 @@ function mapReport(raw: BackendReport): Report {
 
 function extractErrorMessage(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
+    if (!error.response) {
+      return 'No se pudo conectar con el servidor. Revisa la conexión o la configuración de la API.';
+    }
+
     const data = error.response?.data as { error?: string; message?: string } | undefined;
     return data?.error || data?.message || fallback;
   }
@@ -219,6 +225,7 @@ function extractErrorMessage(error: unknown, fallback: string): string {
 // Instancia de axios con interceptor
 const axiosInstance = axios.create({
   baseURL: API_URL,
+  timeout: 15000,
 });
 
 // Interceptor para agregar token JWT
@@ -247,16 +254,21 @@ axiosInstance.interceptors.response.use(
 
 export const apiService = {
   async login(email: string, password: string): Promise<AuthResponse> {
+    if (!configuredApiUrl && typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+      throw new Error('La aplicación no tiene configurada la URL pública de la API.');
+    }
+
     try {
       const response = await axiosInstance.post<BackendAuthResponse>('/auth/login', {
-        email,
-        password,
+        email: email.trim(),
+        password: password.trim(),
       });
       return {
         token: response.data.token,
         user: mapUser(response.data.user),
       };
     } catch (error) {
+      console.error('Login request failed', error);
       throw new Error(extractErrorMessage(error, 'No fue posible iniciar sesión'));
     }
   },

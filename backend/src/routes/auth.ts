@@ -16,13 +16,18 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 
   try {
-    const result = await query('SELECT id, nombre, email, role, password_hash FROM usuarios WHERE email = $1', [email]);
+    const result = await query('SELECT id, nombre, email, role, password_hash, is_active, created_at FROM usuarios WHERE email = $1', [email.trim()]);
     
     if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const user = result.rows[0];
+
+    if (!user.is_active) {
+      return res.status(403).json({ error: 'User account is inactive' });
+    }
+
     const validPassword = await bcrypt.compare(password, user.password_hash);
 
     if (!validPassword) {
@@ -42,6 +47,8 @@ router.post('/login', async (req: Request, res: Response) => {
         nombre: user.nombre,
         email: user.email,
         role: user.role,
+        is_active: user.is_active,
+        created_at: user.created_at,
       },
     });
   } catch (error) {
