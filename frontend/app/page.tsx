@@ -5,14 +5,17 @@ import { LoginView } from "@/components/login-view"
 import { DashboardView } from "@/components/dashboard-view"
 import { RoundFormView } from "@/components/round-form-view"
 import { ReportsView } from "@/components/reports-view"
+import { IncidentsView } from "@/components/incidents-view"
 import { ProfileView } from "@/components/profile-view"
+import { UsersManagementView } from "@/components/users-management-view"
+import { NotificationsView } from "@/components/notifications-view"
 import { BottomNavigation } from "@/components/bottom-navigation"
 import { Toaster } from "@/components/ui/sonner"
 import type { User } from "@/lib/api.service"
 import { toast } from "sonner"
 
-type AppView = "login" | "dashboard" | "form" | "reports" | "profile"
-type NavView = "dashboard" | "reports" | "profile"
+type AppView = "login" | "dashboard" | "form" | "reports" | "incidents" | "profile" | "users" | "notifications"
+type NavView = "dashboard" | "reports" | "incidents" | "profile"
 
 export default function SJSeguridadApp() {
   const [currentView, setCurrentView] = useState<AppView>("login")
@@ -77,6 +80,22 @@ export default function SJSeguridadApp() {
     setCurrentView(view)
   }
 
+  const handleOpenUsers = () => {
+    setCurrentView("users")
+  }
+
+  const handleOpenNotifications = () => {
+    setCurrentView("notifications")
+  }
+
+  const handleOpenIncidents = () => {
+    setCurrentView("incidents")
+  }
+
+  const currentNavView: NavView = currentView === "dashboard" || currentView === "reports" || currentView === "incidents"
+    ? currentView
+    : "profile"
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -115,18 +134,31 @@ export default function SJSeguridadApp() {
         {currentView === "dashboard" && (
           <DashboardView 
             supervisorName={supervisorName} 
+            user={user}
             onNewRound={handleNewRound} 
+            onOpenUsers={handleOpenUsers}
+            onOpenNotifications={handleOpenNotifications}
+            onOpenIncidents={handleOpenIncidents}
           />
         )}
-        {currentView === "reports" && <ReportsView />}
+        {currentView === "reports" && <ReportsView user={user} />}
+        {currentView === "incidents" && <IncidentsView user={user} />}
         {currentView === "profile" && (
           <ProfileView 
             user={user}
+            onOpenNotifications={handleOpenNotifications}
+            onOpenUsers={handleOpenUsers}
             onLogout={handleLogout} 
           />
         )}
+        {currentView === "users" && (
+          <UsersManagementView currentUser={user} onBack={() => setCurrentView("profile")} />
+        )}
+        {currentView === "notifications" && (
+          <NotificationsView onBack={() => setCurrentView("profile")} />
+        )}
         <BottomNavigation 
-          currentView={currentView as NavView} 
+          currentView={currentNavView} 
           onNavigate={handleNavigate} 
         />
       </div>

@@ -1,19 +1,23 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ClipboardList, AlertTriangle, MapPin, Plus, Clock, Building2 } from "lucide-react"
+import { ClipboardList, AlertTriangle, MapPin, Plus, Clock, Building2, Bell, Users } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { apiService, Round, Report } from "@/lib/api.service"
+import { apiService, Round, Report, User } from "@/lib/api.service"
 
 interface DashboardViewProps {
   supervisorName: string
+  user: User | null
   onNewRound: () => void
+  onOpenUsers: () => void
+  onOpenNotifications: () => void
+  onOpenIncidents: () => void
 }
 
-export function DashboardView({ supervisorName, onNewRound }: DashboardViewProps) {
+export function DashboardView({ supervisorName, user, onNewRound, onOpenUsers, onOpenNotifications, onOpenIncidents }: DashboardViewProps) {
   const [rounds, setRounds] = useState<Round[]>([])
   const [reports, setReports] = useState<Report[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -53,6 +57,7 @@ export function DashboardView({ supervisorName, onNewRound }: DashboardViewProps
 
   const alerts = reports.filter(r => r.alertCount > 0).length
   const totalPosts = new Set(reports.map(r => r.location)).size
+  const isAdmin = user?.role === "admin"
 
   // Últimos reportes
   const recentReports = reports
@@ -95,6 +100,46 @@ export function DashboardView({ supervisorName, onNewRound }: DashboardViewProps
             </div>
           </CardContent>
         </Card>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <Card className="border-0 shadow-md">
+            <CardContent className="flex items-center justify-between gap-4 p-4">
+              <div>
+                <p className="font-semibold">Notificaciones</p>
+                <p className="text-sm text-muted-foreground">Consulta avisos operativos y administrativos</p>
+              </div>
+              <Button variant="outline" onClick={onOpenNotifications}>
+                <Bell className="mr-2 h-4 w-4" /> Ver bandeja
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-md">
+            <CardContent className="flex items-center justify-between gap-4 p-4">
+              <div>
+                <p className="font-semibold">Incidencias</p>
+                <p className="text-sm text-muted-foreground">Registrar y consultar novedades críticas del servicio</p>
+              </div>
+              <Button variant="outline" onClick={onOpenIncidents}>
+                <AlertTriangle className="mr-2 h-4 w-4" /> Gestionar
+              </Button>
+            </CardContent>
+          </Card>
+
+          {isAdmin && (
+            <Card className="border-0 shadow-md">
+              <CardContent className="flex items-center justify-between gap-4 p-4">
+                <div>
+                  <p className="font-semibold">Gestión de usuarios</p>
+                  <p className="text-sm text-muted-foreground">Crear supervisores y administrar accesos</p>
+                </div>
+                <Button variant="outline" onClick={onOpenUsers}>
+                  <Users className="mr-2 h-4 w-4" /> Administrar
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </div>
 
         {/* KPI Cards */}
         <div className="grid grid-cols-3 gap-3">
@@ -142,7 +187,9 @@ export function DashboardView({ supervisorName, onNewRound }: DashboardViewProps
             <CardDescription>Últimos reportes enviados</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {recentReports.length > 0 ? (
+            {isLoading ? (
+              <p className="text-center text-muted-foreground py-4">Cargando actividad...</p>
+            ) : recentReports.length > 0 ? (
               recentReports.map((report) => (
                 <div
                   key={report.id}

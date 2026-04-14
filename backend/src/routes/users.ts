@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { AuthRequest, requireRole } from '../middleware/auth';
 import { query } from '../database';
+import { createNotificationForRole, createNotificationForUser } from '../utils/notifications';
 
 const router = express.Router();
 
@@ -56,8 +57,21 @@ router.put('/:id', requireRole('SUPER_ADMIN'), async (req: AuthRequest, res: Res
       return res.status(404).json({ error: 'User not found' });
     }
 
+    await createNotificationForUser(
+      id,
+      'Cuenta actualizada',
+      `Tu perfil fue actualizado. Nuevo rol: ${role}. Estado: ${is_active ? 'activo' : 'inactivo'}.`
+    );
+
+    await createNotificationForRole(
+      'SUPER_ADMIN',
+      'Usuario actualizado',
+      `${nombre} fue actualizado por ${req.user?.email}.`
+    );
+
     res.json(result.rows[0]);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: 'Failed to update user' });
   }
 });
@@ -76,8 +90,15 @@ router.delete('/:id', requireRole('SUPER_ADMIN'), async (req: AuthRequest, res: 
       return res.status(404).json({ error: 'User not found' });
     }
 
+    await createNotificationForUser(
+      id,
+      'Cuenta desactivada',
+      'Tu acceso fue desactivado por un administrador. Contacta al equipo responsable si requieres soporte.'
+    );
+
     res.json({ message: 'User deactivated' });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: 'Failed to delete user' });
   }
 });

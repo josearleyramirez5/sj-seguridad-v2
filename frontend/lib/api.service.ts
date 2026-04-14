@@ -21,6 +21,26 @@ export interface User {
   isActive?: boolean;
 }
 
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  description: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface Incident {
+  id: string;
+  title: string;
+  description: string;
+  location: string;
+  supervisorId: string;
+  severity: 'BAJA' | 'MEDIA' | 'ALTA';
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Round {
   id: string;
   title: string;
@@ -62,6 +82,26 @@ interface BackendUser {
   role: BackendRole;
   created_at?: string;
   is_active?: boolean;
+}
+
+interface BackendNotification {
+  id: string;
+  usuario_id: string;
+  titulo: string;
+  descripcion: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+interface BackendIncident {
+  id: string;
+  titulo: string;
+  descripcion: string;
+  locacion: string;
+  supervisor_id: string;
+  severidad: 'BAJA' | 'MEDIA' | 'ALTA';
+  created_at: string;
+  updated_at: string;
 }
 
 interface BackendRound {
@@ -120,6 +160,30 @@ function mapRound(raw: BackendRound): Round {
     supervisorId: raw.supervisor_id,
     scheduledAt: raw.fecha || raw.created_at,
     createdAt: raw.created_at,
+  };
+}
+
+function mapNotification(raw: BackendNotification): Notification {
+  return {
+    id: raw.id,
+    userId: raw.usuario_id,
+    title: raw.titulo,
+    description: raw.descripcion,
+    isRead: raw.is_read,
+    createdAt: raw.created_at,
+  };
+}
+
+function mapIncident(raw: BackendIncident): Incident {
+  return {
+    id: raw.id,
+    title: raw.titulo,
+    description: raw.descripcion,
+    location: raw.locacion,
+    supervisorId: raw.supervisor_id,
+    severity: raw.severidad,
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
   };
 }
 
@@ -207,6 +271,26 @@ export const apiService = {
     return response.data.map(mapUser);
   },
 
+  async createUser(data: {
+    email: string;
+    password: string;
+    name: string;
+    backendRole: BackendRole;
+  }): Promise<User> {
+    try {
+      const response = await axiosInstance.post<{ user: BackendUser }>('/auth/register', {
+        email: data.email,
+        password: data.password,
+        nombre: data.name,
+        role: data.backendRole,
+      });
+
+      return mapUser(response.data.user);
+    } catch (error) {
+      throw new Error(extractErrorMessage(error, 'No fue posible crear el usuario'));
+    }
+  },
+
   async getMyProfile(): Promise<User> {
     const response = await axiosInstance.get<BackendUser>('/users/profile/me');
     return mapUser(response.data);
@@ -223,6 +307,54 @@ export const apiService = {
 
   async deleteUser(id: string): Promise<void> {
     await axiosInstance.delete(`/users/${id}`);
+  },
+
+  async getNotifications(): Promise<Notification[]> {
+    const response = await axiosInstance.get<BackendNotification[]>('/notifications');
+    return response.data.map(mapNotification);
+  },
+
+  async markNotificationAsRead(id: string): Promise<Notification> {
+    const response = await axiosInstance.put<BackendNotification>(`/notifications/${id}/read`);
+    return mapNotification(response.data);
+  },
+
+  async markAllNotificationsAsRead(): Promise<void> {
+    await axiosInstance.put('/notifications/read-all');
+  },
+
+  async getIncidents(): Promise<Incident[]> {
+    const response = await axiosInstance.get<BackendIncident[]>('/incidents');
+    return response.data.map(mapIncident);
+  },
+
+  async createIncident(data: {
+    title: string;
+    description: string;
+    location: string;
+    severity: Incident['severity'];
+  }): Promise<Incident> {
+    const response = await axiosInstance.post<BackendIncident>('/incidents', {
+      titulo: data.title,
+      descripcion: data.description,
+      locacion: data.location,
+      severidad: data.severity,
+    });
+    return mapIncident(response.data);
+  },
+
+  async updateIncident(id: string, data: Partial<Incident>): Promise<Incident> {
+    const response = await axiosInstance.put<BackendIncident>(`/incidents/${id}`, {
+      titulo: data.title,
+      descripcion: data.description,
+      locacion: data.location,
+      severidad: data.severity,
+    });
+    return mapIncident(response.data);
+  },
+
+  async deleteIncident(id: string): Promise<void> {
+    await axiosInstance.delete(`/incidents/${id}`);
   },
 
   async getRounds(): Promise<Round[]> {

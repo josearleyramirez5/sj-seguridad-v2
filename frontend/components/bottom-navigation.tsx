@@ -1,8 +1,8 @@
 "use client"
 
-import { Home, ClipboardList, User } from "lucide-react"
+import { AlertTriangle, Home, ClipboardList, User } from "lucide-react"
 
-type View = "dashboard" | "reports" | "profile"
+type View = "dashboard" | "reports" | "incidents" | "profile"
 
 interface BottomNavigationProps {
   currentView: View
@@ -13,6 +13,7 @@ export function BottomNavigation({ currentView, onNavigate }: BottomNavigationPr
   const navItems = [
     { id: "dashboard" as const, label: "Inicio", icon: Home },
     { id: "reports" as const, label: "Reportes", icon: ClipboardList },
+    { id: "incidents" as const, label: "Incidencias", icon: AlertTriangle },
     { id: "profile" as const, label: "Mi Perfil", icon: User },
   ]
 

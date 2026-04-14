@@ -1,12 +1,14 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { AlertTriangle, Clock, FileText, MapPin, Search, Shield, User, X } from "lucide-react"
-import { apiService, type Report } from "@/lib/api.service"
+import { AlertTriangle, Clock, FileText, MapPin, Pencil, Plus, Search, Shield, Trash2, User, X } from "lucide-react"
+import { apiService, type Report, type User as AppUser } from "@/lib/api.service"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { toast } from "sonner"
 
 type FilterStatus = "all" | Report["status"]
 
@@ -190,27 +192,123 @@ function ReportDetail({ report, onClose }: ReportDetailProps) {
   )
 }
 
-export function ReportsView() {
+interface ReportsViewProps {
+  user: AppUser | null
+}
+
+const initialFormState = {
+  title: "",
+  location: "",
+  description: "",
+}
+
+export function ReportsView({ user }: ReportsViewProps) {
   const [reports, setReports] = useState<Report[]>([])
   const [selectedReport, setSelectedReport] = useState<Report | null>(null)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all")
   const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isFormVisible, setIsFormVisible] = useState(false)
+  const [editingReportId, setEditingReportId] = useState<string | null>(null)
+  const [formData, setFormData] = useState(initialFormState)
+
+  const canManageReports = user?.role === "admin" || user?.role === "supervisor"
+  const canDeleteReports = user?.role === "admin"
 
   useEffect(() => {
-    const loadReports = async () => {
-      try {
-        const data = await apiService.getReports()
-        setReports(data)
-      } catch (error) {
-        console.error("Error loading reports:", error)
-      } finally {
-        setIsLoading(false)
-      }
+    void loadReports()
+  }, [])
+
+  const loadReports = async () => {
+    try {
+      const data = await apiService.getReports()
+      setReports(data)
+    } catch (error) {
+      console.error("Error loading reports:", error)
+      toast.error(error instanceof Error ? error.message : "No fue posible cargar los reportes")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const resetForm = () => {
+    setFormData(initialFormState)
+    setEditingReportId(null)
+    setIsFormVisible(false)
+  }
+
+  const handleEdit = (report: Report) => {
+    setEditingReportId(report.id)
+    setFormData({
+      title: report.title,
+      location: report.location,
+      description: report.description,
+    })
+    setIsFormVisible(true)
+  }
+
+  const handleSubmit = async () => {
+    if (!formData.title.trim() || !formData.location.trim() || !formData.description.trim()) {
+      toast.error("Completa título, ubicación y descripción del reporte")
+      return
     }
 
-    loadReports()
-  }, [])
+    setIsSaving(true)
+
+    try {
+      if (editingReportId) {
+        const updated = await apiService.updateReport(editingReportId, {
+          title: formData.title,
+          location: formData.location,
+          description: formData.description,
+        })
+
+        setReports((current) => current.map((report) => report.id === editingReportId ? updated : report))
+        toast.success("Reporte actualizado")
+      } else {
+        const created = await apiService.createReport({
+          title: formData.title,
+          location: formData.location,
+          description: formData.description,
+          scheduledAt: new Date().toISOString(),
+        })
+
+        setReports((current) => [created, ...current])
+        toast.success("Reporte creado")
+      }
+
+      resetForm()
+    } catch (error) {
+      console.error("Error saving report:", error)
+      toast.error(error instanceof Error ? error.message : "No fue posible guardar el reporte")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleDelete = async (report: Report) => {
+    if (!canDeleteReports) {
+      return
+    }
+
+    const confirmed = window.confirm(`¿Eliminar el reporte ${report.title}?`)
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      await apiService.deleteReport(report.id)
+      setReports((current) => current.filter((item) => item.id !== report.id))
+      if (selectedReport?.id === report.id) {
+        setSelectedReport(null)
+      }
+      toast.success("Reporte eliminado")
+    } catch (error) {
+      console.error("Error deleting report:", error)
+      toast.error(error instanceof Error ? error.message : "No fue posible eliminar el reporte")
+    }
+  }
 
   const filteredReports = useMemo(() => {
     return reports.filter((report) => {
@@ -226,11 +324,52 @@ export function ReportsView() {
   return (
     <div className="min-h-screen bg-background pb-24">
       <header className="bg-primary px-4 py-5 text-primary-foreground">
-        <h1 className="text-xl font-bold">Reportes</h1>
-        <p className="text-sm text-primary-foreground/80">Historial real de inspecciones registradas</p>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold">Reportes</h1>
+            <p className="text-sm text-primary-foreground/80">Historial real de inspecciones registradas</p>
+          </div>
+          {canManageReports && (
+            <Button variant="secondary" size="sm" onClick={() => setIsFormVisible((value) => !value)}>
+              <Plus className="mr-2 h-4 w-4" /> {isFormVisible ? "Cerrar" : "Nuevo"}
+            </Button>
+          )}
+        </div>
       </header>
 
       <main className="space-y-4 p-4">
+        {canManageReports && isFormVisible && (
+          <Card className="border-0 shadow-md">
+            <CardHeader>
+              <CardTitle>{editingReportId ? "Editar reporte" : "Crear reporte"}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Input
+                value={formData.title}
+                onChange={(event) => setFormData((current) => ({ ...current, title: event.target.value }))}
+                placeholder="Título del reporte"
+              />
+              <Input
+                value={formData.location}
+                onChange={(event) => setFormData((current) => ({ ...current, location: event.target.value }))}
+                placeholder="Ubicación o puesto"
+              />
+              <Textarea
+                value={formData.description}
+                onChange={(event) => setFormData((current) => ({ ...current, description: event.target.value }))}
+                placeholder="Descripción operativa del reporte"
+                className="min-h-[140px]"
+              />
+              <div className="flex gap-2">
+                <Button onClick={handleSubmit} disabled={isSaving}>
+                  {isSaving ? "Guardando..." : editingReportId ? "Actualizar" : "Crear"}
+                </Button>
+                <Button variant="outline" onClick={resetForm} disabled={isSaving}>Cancelar</Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <Card className="border-0 shadow-md">
             <CardContent className="p-4">
@@ -296,7 +435,19 @@ export function ReportsView() {
                       <AlertTriangle className={`h-4 w-4 ${report.alertCount > 0 ? "text-warning" : "text-success"}`} />
                       <span>{report.alertCount > 0 ? `${report.alertCount} alertas detectadas` : "Sin alertas registradas"}</span>
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => setSelectedReport(report)}>Ver detalle</Button>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setSelectedReport(report)}>Ver detalle</Button>
+                      {canManageReports && (
+                        <Button size="sm" variant="outline" onClick={() => handleEdit(report)}>
+                          <Pencil className="mr-1 h-4 w-4" /> Editar
+                        </Button>
+                      )}
+                      {canDeleteReports && (
+                        <Button size="sm" variant="destructive" onClick={() => handleDelete(report)}>
+                          <Trash2 className="mr-1 h-4 w-4" /> Eliminar
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>

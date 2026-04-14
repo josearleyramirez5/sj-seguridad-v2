@@ -7,6 +7,8 @@ import { verifyToken, requireRole } from './middleware/auth';
 import authRouter from './routes/auth';
 import usersRouter from './routes/users';
 import reportsRouter from './routes/reports';
+import incidentsRouter from './routes/incidents';
+import notificationsRouter from './routes/notifications';
 import roundsRouter from './routes/rounds';
 
 dotenv.config();
@@ -36,6 +38,8 @@ app.get('/api/health', healthHandler);
 app.use('/api/auth', authRouter);
 app.use('/api/users', verifyToken, usersRouter);
 app.use('/api/reports', verifyToken, reportsRouter);
+app.use('/api/incidents', verifyToken, incidentsRouter);
+app.use('/api/notifications', verifyToken, notificationsRouter);
 app.use('/api/rounds', verifyToken, roundsRouter);
 
 // Error handling

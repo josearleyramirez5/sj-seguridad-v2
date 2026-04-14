@@ -2,6 +2,8 @@ import express, { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { query } from '../database';
+import { AuthRequest, requireRole, verifyToken } from '../middleware/auth';
+import { createNotificationForRole, createNotificationForUser } from '../utils/notifications';
 
 const router = express.Router();
 
@@ -49,19 +51,8 @@ router.post('/login', async (req: Request, res: Response) => {
 });
 
 // Register (Solo SUPER_ADMIN)
-router.post('/register', async (req: Request, res: Response) => {
+router.post('/register', verifyToken, requireRole('SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
   const { email, password, nombre, role } = req.body;
-  const userId = req.headers['x-user-id'] as string;
-
-  // Verificar que el usuario que crea sea SUPER_ADMIN
-  try {
-    const userResult = await query('SELECT role FROM usuarios WHERE id = $1', [userId]);
-    if (!userResult.rows.length || userResult.rows[0].role !== 'SUPER_ADMIN') {
-      return res.status(403).json({ error: 'Only SUPER_ADMIN can create users' });
-    }
-  } catch (error) {
-    return res.status(500).json({ error: 'Authorization check failed' });
-  }
 
   if (!email || !password || !nombre || !role) {
     return res.status(400).json({ error: 'All fields required' });
@@ -75,9 +66,23 @@ router.post('/register', async (req: Request, res: Response) => {
       [email, passwordHash, nombre, role, true]
     );
 
+    const createdUser = result.rows[0];
+
+    await createNotificationForUser(
+      createdUser.id,
+      'Bienvenido a SJ Seguridad',
+      `Tu cuenta fue creada con el rol ${createdUser.role}. Ya puedes ingresar a la plataforma.`
+    );
+
+    await createNotificationForRole(
+      'SUPER_ADMIN',
+      'Nuevo usuario creado',
+      `${createdUser.nombre} (${createdUser.role}) fue registrado por ${req.user?.email}.`
+    );
+
     res.status(201).json({
       message: 'User created successfully',
-      user: result.rows[0],
+      user: createdUser,
     });
   } catch (error: any) {
     if (error.code === '23505') {

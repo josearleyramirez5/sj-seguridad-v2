@@ -1,6 +1,6 @@
 "use client"
 
-import { User, Mail, Phone, Building2, LogOut, ChevronRight, Shield, Bell, HelpCircle } from "lucide-react"
+import { User, Mail, Phone, Building2, LogOut, ChevronRight, Bell, Users } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,8 @@ import type { User as AppUser } from "@/lib/api.service"
 
 interface ProfileViewProps {
   user: AppUser | null
+  onOpenNotifications: () => void
+  onOpenUsers: () => void
   onLogout: () => void
 }
 
@@ -18,13 +20,13 @@ function getRoleLabel(role: AppUser["role"] | undefined) {
   return "Supervisor de Seguridad"
 }
 
-export function ProfileView({ user, onLogout }: ProfileViewProps) {
+export function ProfileView({ user, onOpenNotifications, onOpenUsers, onLogout }: ProfileViewProps) {
   const displayName = user?.name || "Usuario"
+  const isAdmin = user?.role === "admin"
 
   const menuItems = [
-    { icon: Bell, label: "Notificaciones", action: () => {} },
-    { icon: Shield, label: "Seguridad", action: () => {} },
-    { icon: HelpCircle, label: "Ayuda y Soporte", action: () => {} },
+    { icon: Bell, label: "Notificaciones", action: onOpenNotifications },
+    ...(isAdmin ? [{ icon: Users, label: "Gestión de usuarios", action: onOpenUsers }] : []),
   ]
 
   return (
