@@ -1,8 +1,46 @@
 import express, { Request, Response } from 'express';
 import { AuthRequest, requireRole } from '../middleware/auth';
-import { query } from '../database';
+import { getClient, query } from '../database';
 
 const router = express.Router();
+
+// Crear ronda y reporte en una sola operación
+router.post('/complete', requireRole('SUPERVISOR', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
+  const { titulo, descripcion, locacion, fecha } = req.body;
+
+  if (!titulo || !descripcion || !locacion) {
+    return res.status(400).json({ error: 'Required fields: titulo, descripcion, locacion' });
+  }
+
+  const client = await getClient();
+
+  try {
+    await client.query('BEGIN');
+
+    const roundResult = await client.query(
+      'INSERT INTO rondas (titulo, descripcion, locacion, supervisor_id, fecha, created_at) VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING id, titulo, descripcion, locacion, supervisor_id, fecha, created_at',
+      [titulo, descripcion, locacion, req.user?.id, fecha || new Date()]
+    );
+
+    const reportResult = await client.query(
+      'INSERT INTO reportes (titulo, descripcion, locacion, supervisor_id, fecha, created_at) VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING id, titulo, descripcion, locacion, supervisor_id, fecha, created_at',
+      [titulo, descripcion, locacion, req.user?.id, fecha || new Date()]
+    );
+
+    await client.query('COMMIT');
+
+    res.status(201).json({
+      round: roundResult.rows[0],
+      report: reportResult.rows[0],
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error(error);
+    res.status(500).json({ error: 'Failed to complete round' });
+  } finally {
+    client.release();
+  }
+});
 
 // Crear ronda
 router.post('/', requireRole('SUPERVISOR', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {

@@ -8,17 +8,11 @@ import { ReportsView } from "@/components/reports-view"
 import { ProfileView } from "@/components/profile-view"
 import { BottomNavigation } from "@/components/bottom-navigation"
 import { Toaster } from "@/components/ui/sonner"
+import type { User } from "@/lib/api.service"
 import { toast } from "sonner"
 
 type AppView = "login" | "dashboard" | "form" | "reports" | "profile"
 type NavView = "dashboard" | "reports" | "profile"
-
-interface User {
-  id: string
-  email: string
-  name: string
-  role: 'admin' | 'supervisor' | 'user'
-}
 
 export default function SJSeguridadApp() {
   const [currentView, setCurrentView] = useState<AppView>("login")
@@ -127,7 +121,7 @@ export default function SJSeguridadApp() {
         {currentView === "reports" && <ReportsView />}
         {currentView === "profile" && (
           <ProfileView 
-            supervisorName={supervisorName} 
+            user={user}
             onLogout={handleLogout} 
           />
         )}

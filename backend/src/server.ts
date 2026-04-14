@@ -19,15 +19,18 @@ app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:3000' }));
 app.use(morgan('combined'));
 app.use(express.json());
 
-// Health check
-app.get('/health', async (req: Request, res: Response) => {
+const healthHandler = async (req: Request, res: Response) => {
   try {
     await query('SELECT NOW()');
     res.json({ status: 'ok', timestamp: new Date() });
   } catch (error) {
     res.status(500).json({ status: 'error', message: 'Database connection failed' });
   }
-});
+};
+
+// Health check
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
 
 // Routes
 app.use('/api/auth', authRouter);

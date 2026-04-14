@@ -5,13 +5,22 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import type { User as AppUser } from "@/lib/api.service"
 
 interface ProfileViewProps {
-  supervisorName: string
+  user: AppUser | null
   onLogout: () => void
 }
 
-export function ProfileView({ supervisorName, onLogout }: ProfileViewProps) {
+function getRoleLabel(role: AppUser["role"] | undefined) {
+  if (role === "admin") return "Administrador"
+  if (role === "guard") return "Guarda"
+  return "Supervisor de Seguridad"
+}
+
+export function ProfileView({ user, onLogout }: ProfileViewProps) {
+  const displayName = user?.name || "Usuario"
+
   const menuItems = [
     { icon: Bell, label: "Notificaciones", action: () => {} },
     { icon: Shield, label: "Seguridad", action: () => {} },
@@ -32,11 +41,11 @@ export function ProfileView({ supervisorName, onLogout }: ProfileViewProps) {
             <div className="flex flex-col items-center text-center">
               <Avatar className="h-20 w-20 border-4 border-primary/20">
                 <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-bold">
-                  {supervisorName.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                  {displayName.split(" ").map(n => n[0]).join("").slice(0, 2)}
                 </AvatarFallback>
               </Avatar>
-              <h2 className="text-xl font-bold text-foreground mt-4">{supervisorName}</h2>
-              <p className="text-muted-foreground">Supervisor de Seguridad</p>
+              <h2 className="text-xl font-bold text-foreground mt-4">{displayName}</h2>
+              <p className="text-muted-foreground">{getRoleLabel(user?.role)}</p>
             </div>
 
             <Separator className="my-6" />
@@ -48,7 +57,7 @@ export function ProfileView({ supervisorName, onLogout }: ProfileViewProps) {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Correo</p>
-                  <p className="font-medium text-foreground">supervisor@sjseguridad.com</p>
+                  <p className="font-medium text-foreground">{user?.email || "No registrado"}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -57,7 +66,7 @@ export function ProfileView({ supervisorName, onLogout }: ProfileViewProps) {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Teléfono</p>
-                  <p className="font-medium text-foreground">+57 300 123 4567</p>
+                  <p className="font-medium text-foreground">No registrado</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -65,8 +74,8 @@ export function ProfileView({ supervisorName, onLogout }: ProfileViewProps) {
                   <Building2 className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Zona</p>
-                  <p className="font-medium text-foreground">Bogotá Norte</p>
+                  <p className="text-sm text-muted-foreground">Rol operativo</p>
+                  <p className="font-medium text-foreground">{user?.backendRole || "Sin asignar"}</p>
                 </div>
               </div>
             </div>

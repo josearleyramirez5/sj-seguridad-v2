@@ -5,8 +5,13 @@
   "private": true,
   "scripts": {
     "dev": "cd backend && npm run dev",
-    "build": "cd backend && npm run build",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "npm run build:backend && npm run build:frontend",
+    "build:backend": "cd backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
     "start": "cd backend && npm start",
+    "start:backend": "cd backend && npm start",
     "type-check": "cd backend && tsc --noEmit"
   },
   "keywords": ["security", "supervision", "postgresql"],

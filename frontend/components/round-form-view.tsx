@@ -17,6 +17,7 @@ import {
   RefreshCw
 } from "lucide-react"
 import { useGPS } from "@/hooks/use-gps"
+import { apiService } from "@/lib/api.service"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Checkbox } from "@/components/ui/checkbox"
+import { toast } from "sonner"
 
 interface RoundFormViewProps {
   onComplete: () => void
@@ -101,6 +103,32 @@ const steps = [
   { id: 5, title: "Finalizar", icon: CheckCircle2 },
 ]
 
+function buildInspectionDescription(formData: FormData, alertCount: number, gpsCoords: { lat: number; lng: number; accuracy: number; timestamp: string } | null) {
+  const equipmentSummary = Object.entries(formData.equipment)
+    .map(([key, value]) => `${key}=${value.checked ? "ok" : value.details.trim() || "pendiente"}`)
+    .join("; ")
+
+  const documentSummary = Object.entries(formData.documents)
+    .map(([key, value]) => `${key}=${value ? "si" : "no"}`)
+    .join("; ")
+
+  return [
+    `Cliente: ${formData.clientName}`,
+    `Puesto: ${formData.postName}`,
+    `Guarda: ${formData.guardName}`,
+    `Cedula: ${formData.guardId}`,
+    `Documentacion: ${formData.documentationOk ? "OK" : "PENDIENTE"}`,
+    `Presentacion: ${formData.personalRating}/5`,
+    `Barreras: ${formData.barrierStatus || "sin_registro"}`,
+    `Vulnerabilidades: ${formData.vulnerabilities.trim() || "ninguna"}`,
+    `GPS: ${gpsCoords ? `${gpsCoords.lat},${gpsCoords.lng}` : "sin_datos"}`,
+    `Documentos: ${documentSummary}`,
+    `Dotacion: ${equipmentSummary}`,
+    `Observaciones: ${formData.finalObservations.trim() || "Sin observaciones adicionales."}`,
+    `Alertas: ${alertCount}`,
+  ].join("\n")
+}
+
 export function RoundFormView({ onComplete, onCancel }: RoundFormViewProps) {
   const [currentStep, setCurrentStep] = useState(0)
   const [formData, setFormData] = useState<FormData>(initialFormData)
@@ -124,6 +152,11 @@ export function RoundFormView({ onComplete, onCancel }: RoundFormViewProps) {
   }
 
   const handleSubmit = async () => {
+    if (!formData.clientName || !formData.postName || !formData.guardName || !formData.guardId) {
+      toast.error("Completa cliente, puesto y datos del guarda antes de finalizar")
+      return
+    }
+
     setIsSubmitting(true)
     
     // Calculate alert count based on equipment issues and vulnerabilities
@@ -131,68 +164,25 @@ export function RoundFormView({ onComplete, onCancel }: RoundFormViewProps) {
     const hasVulnerabilities = formData.vulnerabilities.trim().length > 0
     const alertCount = equipmentIssues + (hasVulnerabilities ? 1 : 0)
     
-    // Consolidate form data as JSON for Firebase Firestore
-    // Structure: /reportes/{reportId}/...
-    const reportData = {
-      // Will be set by Firestore: id: doc.id
-      supervisorId: "sup_001", // From auth context
-      supervisorName: formData.supervisor || "Carlos Rodríguez",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      status: "pendiente" as const,
-      
-      // GPS Location
-      gps: gpsCoords ? {
-        lat: gpsCoords.lat,
-        lng: gpsCoords.lng,
-        accuracy: gpsCoords.accuracy,
-        timestamp: gpsCoords.timestamp
-      } : null,
-      
-      // Client/Post info
-      clientName: formData.clientName,
-      postName: formData.postName,
-      
-      // Guard info
-      guard: {
-        name: formData.guardName,
-        cedula: formData.guardId,
-        documentationOk: formData.documentationOk,
-        personalRating: formData.personalRating
-      },
-      
-      // Equipment
-      equipment: formData.equipment,
-      
-      // Facilities
-      barrierStatus: formData.barrierStatus as "bueno" | "regular" | "malo",
-      vulnerabilities: formData.vulnerabilities,
-      photoUrls: [], // Would be populated after upload to Firebase Storage
-      
-      // Documentation
-      documents: formData.documents,
-      
-      // Final
-      observations: formData.finalObservations,
-      alertCount
+    const title = `${formData.clientName} - ${formData.postName}`
+    const location = `${formData.clientName} / ${formData.postName}`
+    const description = buildInspectionDescription(formData, alertCount, gpsCoords)
+
+    try {
+      await apiService.completeRound({
+        title,
+        description,
+        location,
+        scheduledAt: new Date().toISOString(),
+      })
+
+      setIsSubmitting(false)
+      onComplete()
+    } catch (error) {
+      console.error("Error creating inspection:", error)
+      setIsSubmitting(false)
+      toast.error(error instanceof Error ? error.message : "No fue posible guardar la ronda")
     }
-    
-    // Ready for Firebase:
-    // import { collection, addDoc } from "firebase/firestore"
-    // const docRef = await addDoc(collection(db, "reportes"), reportData)
-    console.log("Report data ready for Firestore:", JSON.stringify(reportData, null, 2))
-    
-    // Also upload GPS location to /ubicaciones/{userId}/{timestamp}
-    // const locationData = {
-    //   userId: "sup_001",
-    //   sessionId: crypto.randomUUID(),
-    //   ...reportData.gps
-    // }
-    // await addDoc(collection(db, "ubicaciones", "sup_001", "registros"), locationData)
-    
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    setIsSubmitting(false)
-    onComplete()
   }
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

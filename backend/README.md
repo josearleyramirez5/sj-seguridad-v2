@@ -59,6 +59,7 @@ cp .env.example .env
 
 # Editar .env con tus datos:
 # DATABASE_URL=postgresql://postgres:postgres@localhost:5432/sj_security
+# DATABASE_SSL=false
 # JWT_SECRET=tu_secreto_super_seguro_aqui_cambiar_en_produccion
 # PORT=5000
 ```
@@ -87,6 +88,13 @@ npm start
 📊 Database: postgresql://...
 ```
 
+El backend expone ambos health checks:
+
+```text
+GET /health
+GET /api/health
+```
+
 ---
 
 ## 🔌 ENDPOINTS API
@@ -100,7 +108,7 @@ Content-Type: application/json
 
 {
   "email": "admin@sjseguridad.com",
-  "password": "tu_contraseña"
+  "password": "Admin123!!"
 }
 
 Response:
@@ -209,6 +217,18 @@ Content-Type: application/json
   "fecha": "2026-04-10T22:00:00Z"
 }
 
+# Crear ronda y reporte en una sola operacion
+POST /api/rounds/complete
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "titulo": "Banco Principal - Puesto Norte",
+  "descripcion": "Cliente: Banco Principal\nPuesto: Norte\n...",
+  "locacion": "Banco Principal / Norte",
+  "fecha": "2026-04-10T22:00:00Z"
+}
+
 # Obtener rondas
 GET /api/rounds
 Authorization: Bearer <token>
@@ -251,11 +271,14 @@ Authorization: Bearer <token>
 En Railway Project Settings:
 ```
 DATABASE_URL=postgresql://user:pass@host:5432/db
+DATABASE_SSL=false
 JWT_SECRET=tu_secreto_muy_seguro_aqui
 NODE_ENV=production
 PORT=5000
 CORS_ORIGIN=https://tu_frontend_vercel.com
 ```
+
+Si tu proveedor PostgreSQL requiere SSL, cambia DATABASE_SSL a true.
 
 ### PASO 5: Deploy
 

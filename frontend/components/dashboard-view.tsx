@@ -51,12 +51,12 @@ export function DashboardView({ supervisorName, onNewRound }: DashboardViewProps
     return rDate.toDateString() === today.toDateString()
   }).length
 
-  const alerts = reports.filter(r => r.status === 'pending').length
-  const totalPosts = new Set(reports.map(r => r.supervised_by)).size
+  const alerts = reports.filter(r => r.alertCount > 0).length
+  const totalPosts = new Set(reports.map(r => r.location)).size
 
   // Últimos reportes
   const recentReports = reports
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5)
 
   return (
@@ -152,12 +152,12 @@ export function DashboardView({ supervisorName, onNewRound }: DashboardViewProps
                     <Building2 className="h-5 w-5 text-primary" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-foreground truncate">{report.supervised_by}</p>
-                    <p className="text-sm text-muted-foreground truncate">{report.observations.substring(0, 30)}...</p>
+                    <p className="font-medium text-foreground truncate">{report.title}</p>
+                    <p className="text-sm text-muted-foreground truncate">{report.location}</p>
                   </div>
                   <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
                     <Clock className="h-3 w-3" />
-                    <span>{new Date(report.timestamp).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}</span>
+                    <span>{new Date(report.createdAt).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })}</span>
                   </div>
                 </div>
               ))

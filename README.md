@@ -1,263 +1,199 @@
-# 🔒 SJ Seguridad v2 - PostgreSQL + Express + Next.js
+# SJ Seguridad v2
 
-Reemplazo completo de Firebase por PostgreSQL + Backend Express.
+Plataforma de supervision de seguridad con frontend Next.js, backend Express/TypeScript y PostgreSQL.
 
-```
+## Estado actual
+
+- Frontend y backend compilan correctamente en local.
+- El frontend ya consume la API real; no depende de Firebase.
+- Existe el flujo POST /api/rounds/complete para guardar ronda y reporte en una sola operacion.
+- La vista de reportes reconstruye el detalle desde la descripcion serializada del reporte.
+- El despliegue en Vercel esta preparado para el frontend, pero este repositorio no esta enlazado localmente con una cuenta/proyecto de Vercel.
+
+## Estructura
+
+```text
 sj-security-v2/
-├── backend/              # Express + Node.js + TypeScript
-│   ├── src/
-│   │   ├── server.ts    # Servidor principal
-│   │   ├── database.ts  # Conexión PostgreSQL
-│   │   ├── middleware/
-│   │   │   └── auth.ts  # JWT + Validación de roles
-│   │   └── routes/
-│   │       ├── auth.ts
-│   │       ├── users.ts
-│   │       ├── reports.ts
-│   │       └── rounds.ts
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── .env.example
-│   └── README.md         # Instrucciones detalladas
-│
-├── database/             # SQL Scripts
-│   └── schema.sql       # Tabla, índices, usuario admin
-│
-└── frontend/            # Next.js (crear luego)
-    ├── app/
-    ├── components/
-    ├── lib/
-    │   └── api.service.ts  # NUEVO: APIs REST en lugar de Firebase
-    └── package.json
+|-- backend/
+|-- database/
+|-- frontend/
+|-- README.md
+|-- QUICK_START.md
+`-- vercel.json
 ```
 
----
+## Arranque local
 
-## ⚡ INICIO RÁPIDO (Completo)
+### 1. Base de datos
 
-### 1️⃣ BACKEND - INSTALAR Y CONFIGURAR
-
-#### **A) PostgreSQL Local (Windows)**
+Opcion local con PostgreSQL instalado:
 
 ```powershell
-# Si no tienes PostgreSQL instalado:
-# Descargar: https://www.postgresql.org/download/windows/
-# Ejecutar instalador
-
-# Abrir PowerShell y conectarse:
 psql -U postgres
-
-# Dentro de psql:
 CREATE DATABASE sj_security;
 \q
 ```
 
-#### **B) O Usar Docker (Más fácil)**
+Opcion con Docker:
 
 ```powershell
-# Instalar Docker Desktop: https://www.docker.com/products/docker-desktop
-
-# Ejecutar PostgreSQL
 docker run --name sj-postgres `
   -e POSTGRES_PASSWORD=postgres `
   -e POSTGRES_DB=sj_security `
   -p 5432:5432 `
   -d postgres:15
-
-# Ver si está funcionando:
-docker ps
 ```
 
-#### **C) Instalar dependencias del backend**
+### 2. Variables del backend
+
+Crear backend/.env a partir de backend/.env.example.
+
+Valores minimos de desarrollo:
+
+```env
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/sj_security
+PORT=5000
+JWT_SECRET=cambiar-antes-de-produccion
+NODE_ENV=development
+CORS_ORIGIN=http://localhost:3000
+```
+
+### 3. Variables del frontend
+
+Crear frontend/.env.local a partir de frontend/.env.example.
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:5000/api
+```
+
+### 4. Instalar dependencias
 
 ```powershell
 cd backend
 npm install
+
+cd ..\frontend
+npm install
 ```
 
-#### **D) Crear archivo .env**
+### 5. Aplicar schema
+
+Desde la carpeta backend:
 
 ```powershell
-# Copiar el archivo de ejemplo
-cp .env.example .env
-
-# Editar .env (usa Notepad o VS Code)
-# Debe quedar así:
-# DATABASE_URL=postgresql://postgres:postgres@localhost:5432/sj_security
-# JWT_SECRET=todavia_no_es_produccion_cambiarlo_luego
-# PORT=5000
-# NODE_ENV=development
-# CORS_ORIGIN=http://localhost:3000
+psql -U postgres -d sj_security -f ..\database\schema.sql
 ```
 
-#### **E) Crear tablas en la base de datos**
+El schema habilita pgcrypto y crea un usuario inicial:
+
+- email: admin@sjseguridad.com
+- password: Admin123!!
+
+### 6. Ejecutar la app
+
+Terminal 1, backend:
 
 ```powershell
-# Desde PowerShell (en la carpeta del proyecto)
-psql -U postgres -d sj_security -f ../database/schema.sql
-
-# Debe mostrar: CREATE TABLE, CREATE INDEX, INSERT 1
-```
-
-#### **F) Iniciar servidor**
-
-```powershell
-# Modo desarrollo (auto-reload)
+cd backend
 npm run dev
-
-# Debe mostrar:
-# 🚀 Server running on http://localhost:5000
-# 📊 Database: postgresql://...
 ```
 
-✅ **Backend listo**
+Terminal 2, frontend:
 
----
+```powershell
+cd frontend
+npm run dev
+```
 
-### 2️⃣ PRUEBAS RÁPIDAS (Sin Frontend)
+## Scripts utiles en la raiz
 
-**Abrir Postman o Insomnia** (O usar curl en PowerShell)
+```powershell
+npm run dev:backend
+npm run dev:frontend
+npm run build
+npm run build:backend
+npm run build:frontend
+```
 
-#### **A) Health Check**
+## Verificaciones minimas
 
-```bash
+Health check backend:
+
+```text
 GET http://localhost:5000/health
-
-Respuesta:
-{
-  "status": "ok",
-  "timestamp": "2026-04-09T..."
-}
+GET http://localhost:5000/api/health
 ```
 
-#### **B) Login**
+Login:
 
-```bash
+```http
 POST http://localhost:5000/api/auth/login
 Content-Type: application/json
 
 {
   "email": "admin@sjseguridad.com",
-  "password": "admin123"  # Cambiar en schema.sql con bcrypt real
-}
-
-Respuesta:
-{
-  "token": "eyJhbGciOiJIUzI1NiIs...",
-  "user": {
-    "id": "uuid",
-    "nombre": "Administrador",
-    "role": "SUPER_ADMIN"
-  }
+  "password": "Admin123!!"
 }
 ```
 
-#### **C) Obtener Usuarios (Requiere Token)**
+Flujo principal esperado:
 
-```bash
-GET http://localhost:5000/api/users
-Authorization: Bearer <TOKEN_DEL_LOGIN>
+1. Iniciar sesion en el frontend.
+2. Crear una ronda desde el formulario.
+3. Confirmar que aparecen registros en rondas y reportes.
+4. Verificar dashboard y vista de reportes.
 
-Respuesta:
-[
-  {
-    "id": "uuid",
-    "nombre": "Administrador",
-    "email": "admin@sjseguridad.com",
-    "role": "SUPER_ADMIN"
-  }
-]
-```
+## Despliegue
 
----
+### Backend
 
-## 📱 Frontend (Next.js)
+El backend esta pensado para desplegarse en Railway u otro host Node.js con PostgreSQL.
 
-**Por ahora está vacío, lo crearemos después.**
+Variables minimas de produccion:
 
-La estructura será similar a la v1, pero usando APIs REST en lugar de Firebase.
-
----
-
-## 🌐 DEPLOYMENT A RAILWAY
-
-### PASO 1: Crear Cuenta Railway
-
-1. Ir a https://railway.app
-2. Hacer login con GitHub
-3. Crear nuevo proyecto
-
-### PASO 2: Agregar PostgreSQL
-
-1. En Dashboard: "+ New" → PostgreSQL
-2. Se crea automáticamente
-3. Copiar CONNECTION STRING
-
-### PASO 3: Agregar Backend
-
-1. "+ New Service" → GitHub Repo
-2. Seleccionar "sj-security-v2"
-3. Configurar Variables de Entorno:
-
-```
-DATABASE_URL=<Copiar de PostgreSQL service>
-JWT_SECRET=un_secreto_muy_fuerte_aqui_cambiar
+```env
+DATABASE_URL=postgresql://...
+JWT_SECRET=...
 NODE_ENV=production
-CORS_ORIGIN=https://tu_frontend.vercel.com
+PORT=5000
+CORS_ORIGIN=https://tu-frontend.vercel.app
 ```
 
-### PASO 4: Deploy
+### Frontend en Vercel
 
-```bash
-git push origin main
+El archivo vercel.json ya esta ajustado para desplegar el frontend desde la raiz del repositorio.
 
-# Railway detecta cambios y hace deploy automáticamente
+Variables minimas en Vercel:
+
+```env
+NEXT_PUBLIC_API_URL=https://tu-backend.railway.app/api
 ```
 
----
+Estado real de Vercel en este workspace:
 
-## ✅ CHECKLIST
+- No existe carpeta .vercel en la raiz.
+- La CLI vercel no esta instalada en esta maquina.
+- Por eso no puedo confirmar que el proyecto este enlazado a tu cuenta desde aqui.
 
-- [ ] PostgreSQL instalado o Docker corriendo
-- [ ] Base de datos "sj_security" creada
-- [ ] Backend npm install completo
-- [ ] .env configurado
-- [ ] Schema SQL aplicado
-- [ ] Backend npm run dev funcionando
-- [ ] Health check en http://localhost:5000/health OK
-- [ ] Login test con Postman OK
-- [ ] Get users test OK
+Lo que si esta confirmado:
 
----
+- vercel.json es valido para este repo.
+- El build del frontend pasa localmente.
+- La salida esperada de Vercel es frontend/.next.
 
-## 📚 Referencia Rápida
+## Notas tecnicas
 
-| Comando | Descripción |
-|---------|------------|
-| `npm run dev` | Iniciar servidor (modo desarrollo) |
-| `npm run build` | Compilar TypeScript |
-| `npm start` | Iniciar desde dist/ |
-| `psql -U postgres -d sj_security` | Conectar a BD |
-| `\dt` | Listar tablas (dentro de psql) |
-| `docker ps` | Ver contenedores activos |
-| `docker logs sj-postgres` | Ver logs del contenedor |
+- El frontend normaliza roles y payloads del backend en frontend/lib/api.service.ts.
+- Los reportes con alertas se marcan como attention; los demas como completed.
+- La informacion detallada de inspeccion hoy se almacena dentro de descripcion; si luego quieres, eso se puede normalizar en tablas adicionales.
 
----
+## Siguiente validacion recomendada
 
-## 🆘 Problemas Comunes
-
-**Error: "Cannot find module 'pg'"**
-```bash
-npm install pg
-```
-
-**Error: "Database connection failed"**
-- Verificar que PostgreSQL está corriendo
-- Verificar DATABASE_URL en .env
-- Verificar credenciales
-
-**Error: "Cannot login"**
-- La contraseña admin en schema.sql es de ejemplo
+1. Levantar PostgreSQL.
+2. Aplicar database/schema.sql.
+3. Ejecutar backend y frontend.
+4. Probar login y creacion de ronda.
+5. Configurar en Vercel la variable NEXT_PUBLIC_API_URL apuntando al backend productivo.
 - Ver schema.sql línea de INSERT
 
 ---

@@ -1,5 +1,4 @@
--- Crear base de datos
-CREATE DATABASE IF NOT EXISTS sj_security;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Usuarios
 CREATE TABLE IF NOT EXISTS usuarios (
@@ -82,7 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_notificaciones_usuario_id ON notificaciones(usuar
 INSERT INTO usuarios (email, password_hash, nombre, role, is_active)
 VALUES (
   'admin@sjseguridad.com',
-  '$2a$10$YOUR_BCRYPT_HASH_HERE', -- Cambiar con bcrypt real
+  '$2a$10$kFq1HAw5hlhnd31dDF9LZeM70Jp3GvUUR/wRMF3/47He8IYXROrMm',
   'Administrador',
   'SUPER_ADMIN',
   TRUE
