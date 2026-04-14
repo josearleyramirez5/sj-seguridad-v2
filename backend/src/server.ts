@@ -16,8 +16,39 @@ dotenv.config();
 const app: Express = express();
 const PORT = process.env.PORT || 5000;
 
+const configuredOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const defaultAllowedOrigins = [
+  'http://localhost:3000',
+  'https://sj-security-v2.vercel.app',
+];
+
+const allowedOrigins = configuredOrigins.length > 0
+  ? [...new Set([...configuredOrigins, ...defaultAllowedOrigins])]
+  : defaultAllowedOrigins;
+
+function isAllowedOrigin(origin: string) {
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  return /^https:\/\/sj-security-v2(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(origin);
+}
+
 // Middleware
-app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:3000' }));
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || isAllowedOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`Origin not allowed by CORS: ${origin}`));
+  },
+}));
 app.use(morgan('combined'));
 app.use(express.json());
 
