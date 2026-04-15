@@ -10,6 +10,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 
 type FilterStatus = "all" | Report["status"]
@@ -50,6 +53,55 @@ const initialEditorState: EditorState = {
   finalObservations: "",
   mode: "plain",
   payload: null,
+}
+
+const equipmentDefinitions = [
+  { key: "armament", label: "Armamento" },
+  { key: "box", label: "Cajilla" },
+  { key: "radios", label: "Radios" },
+  { key: "garrett", label: "Garrett" },
+  { key: "canine", label: "Caninos" },
+] as const
+
+const documentDefinitions = [
+  { key: "generalInstructions", label: "Consignas generales" },
+  { key: "particularInstructions", label: "Consignas particulares" },
+  { key: "protocols", label: "Protocolos" },
+  { key: "manuals", label: "Manuales" },
+] as const
+
+function normalizeEditablePayload(payload: StructuredReportPayload): StructuredReportPayload {
+  return {
+    ...payload,
+    version: 2,
+    assignedSupervisor: payload.assignedSupervisor ?? null,
+    generatedBy: payload.generatedBy ?? null,
+    guard: {
+      userId: payload.guard.userId,
+      name: payload.guard.name || "",
+      email: payload.guard.email,
+      cedula: payload.guard.cedula || "",
+      documentationOk: payload.guard.documentationOk ?? false,
+      personalRating: payload.guard.personalRating ?? 0,
+    },
+    equipment: equipmentDefinitions.reduce<Record<string, { checked: boolean; details: string }>>((accumulator, item) => {
+      const currentValue = payload.equipment[item.key]
+      accumulator[item.key] = {
+        checked: currentValue?.checked ?? false,
+        details: currentValue?.details ?? "",
+      }
+      return accumulator
+    }, {}),
+    documents: documentDefinitions.reduce<Record<string, boolean>>((accumulator, item) => {
+      accumulator[item.key] = payload.documents[item.key] ?? false
+      return accumulator
+    }, {}),
+    photos: payload.photos ?? [],
+    finalObservations: payload.finalObservations || "",
+    barrierStatus: payload.barrierStatus || "sin_registro",
+    vulnerabilities: payload.vulnerabilities || "ninguna",
+    alertCount: payload.alertCount ?? 0,
+  }
 }
 
 function formatDateTime(value: string) {
@@ -255,6 +307,19 @@ export function ReportsView({ user }: ReportsViewProps) {
   const canManageReports = user?.role === "admin" || user?.role === "supervisor"
   const canDeleteReports = user?.role === "admin"
 
+  const updateStructuredPayload = (updater: (payload: StructuredReportPayload) => StructuredReportPayload) => {
+    setEditorState((current) => {
+      if (!current.payload) {
+        return current
+      }
+
+      return {
+        ...current,
+        payload: updater(current.payload),
+      }
+    })
+  }
+
   useEffect(() => {
     void loadReports()
   }, [])
@@ -284,20 +349,20 @@ export function ReportsView({ user }: ReportsViewProps) {
 
   const handleEdit = (report: Report) => {
     const parsed = parseReportDescription(report.description)
-    const isStructured = parsed.version === 2
+    const editablePayload = normalizeEditablePayload(parsed)
 
     setEditingReportId(report.id)
     setEditorState({
       title: report.title,
       location: report.location,
       description: report.description,
-      clientName: parsed.clientName,
-      postName: parsed.postName,
-      barrierStatus: parsed.barrierStatus,
-      vulnerabilities: parsed.vulnerabilities,
-      finalObservations: parsed.finalObservations,
-      mode: isStructured ? "structured" : "plain",
-      payload: isStructured ? parsed : null,
+      clientName: editablePayload.clientName,
+      postName: editablePayload.postName,
+      barrierStatus: editablePayload.barrierStatus,
+      vulnerabilities: editablePayload.vulnerabilities,
+      finalObservations: editablePayload.finalObservations,
+      mode: "structured",
+      payload: editablePayload,
     })
     setIsEditorOpen(true)
   }
@@ -324,14 +389,14 @@ export function ReportsView({ user }: ReportsViewProps) {
     try {
       if (editingReportId) {
         if (editorState.mode === "structured" && editorState.payload) {
-          const updatedPayload: StructuredReportPayload = {
+          const updatedPayload = normalizeEditablePayload({
             ...editorState.payload,
             clientName: editorState.clientName.trim(),
             postName: editorState.postName.trim(),
             barrierStatus: editorState.barrierStatus || "sin_registro",
             vulnerabilities: editorState.vulnerabilities.trim() || "ninguna",
             finalObservations: editorState.finalObservations.trim() || "Sin observaciones adicionales.",
-          }
+          })
 
           const updated = await apiService.updateReport(editingReportId, {
             title: `${updatedPayload.clientName} - ${updatedPayload.postName}`,
@@ -523,44 +588,238 @@ export function ReportsView({ user }: ReportsViewProps) {
       </main>
 
       <Dialog open={isEditorOpen} onOpenChange={(open) => !open && resetEditor()}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingReportId ? "Editar reporte" : "Crear reporte"}</DialogTitle>
             <DialogDescription>
-              {editorState.mode === "structured" ? "Edición rápida en ventana modal del reporte generado desde ronda." : "Registro manual de un reporte simple."}
+                {editorState.mode === "structured" ? "Edición organizada del reporte en secciones operativas." : "Registro manual de un reporte simple."}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
             {editorState.mode === "structured" ? (
               <>
-                <Input
-                  value={editorState.clientName}
-                  onChange={(event) => setEditorState((current) => ({ ...current, clientName: event.target.value }))}
-                  placeholder="Cliente"
-                />
-                <Input
-                  value={editorState.postName}
-                  onChange={(event) => setEditorState((current) => ({ ...current, postName: event.target.value }))}
-                  placeholder="Puesto"
-                />
-                <Input
-                  value={editorState.barrierStatus}
-                  onChange={(event) => setEditorState((current) => ({ ...current, barrierStatus: event.target.value }))}
-                  placeholder="Estado de barreras"
-                />
-                <Textarea
-                  value={editorState.vulnerabilities}
-                  onChange={(event) => setEditorState((current) => ({ ...current, vulnerabilities: event.target.value }))}
-                  placeholder="Vulnerabilidades"
-                  className="min-h-[100px]"
-                />
-                <Textarea
-                  value={editorState.finalObservations}
-                  onChange={(event) => setEditorState((current) => ({ ...current, finalObservations: event.target.value }))}
-                  placeholder="Observaciones finales"
-                  className="min-h-[120px]"
-                />
+                  <Card className="border-0 shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="text-base">Resumen</CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid gap-3 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="clientName">Cliente</Label>
+                        <Input
+                          id="clientName"
+                          value={editorState.clientName}
+                          onChange={(event) => setEditorState((current) => ({ ...current, clientName: event.target.value }))}
+                          placeholder="Cliente"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="postName">Puesto</Label>
+                        <Input
+                          id="postName"
+                          value={editorState.postName}
+                          onChange={(event) => setEditorState((current) => ({ ...current, postName: event.target.value }))}
+                          placeholder="Puesto"
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {editorState.payload && (
+                    <>
+                      <Card className="border-0 shadow-sm">
+                        <CardHeader>
+                          <CardTitle className="text-base">Guarda asignado</CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid gap-3 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label htmlFor="guardName">Nombre</Label>
+                            <Input
+                              id="guardName"
+                              value={editorState.payload.guard.name}
+                              onChange={(event) => updateStructuredPayload((payload) => ({
+                                ...payload,
+                                guard: {
+                                  ...payload.guard,
+                                  name: event.target.value,
+                                },
+                              }))}
+                              placeholder="Nombre del guarda"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="guardCedula">Cédula</Label>
+                            <Input
+                              id="guardCedula"
+                              value={editorState.payload.guard.cedula}
+                              onChange={(event) => updateStructuredPayload((payload) => ({
+                                ...payload,
+                                guard: {
+                                  ...payload.guard,
+                                  cedula: event.target.value,
+                                },
+                              }))}
+                              placeholder="Documento"
+                            />
+                          </div>
+                          <div className="rounded-lg bg-muted/50 p-3 md:col-span-2">
+                            <div className="flex items-center justify-between gap-4">
+                              <div>
+                                <p className="font-medium">Documentación al día</p>
+                                <p className="text-sm text-muted-foreground">Marca si la documentación del guarda está completa.</p>
+                              </div>
+                              <Switch
+                                checked={editorState.payload.guard.documentationOk}
+                                onCheckedChange={(checked) => updateStructuredPayload((payload) => ({
+                                  ...payload,
+                                  guard: {
+                                    ...payload.guard,
+                                    documentationOk: checked,
+                                  },
+                                }))}
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2 md:col-span-2">
+                            <Label htmlFor="guardRating">Presentación personal</Label>
+                            <Input
+                              id="guardRating"
+                              type="number"
+                              min="0"
+                              max="5"
+                              value={editorState.payload.guard.personalRating}
+                              onChange={(event) => updateStructuredPayload((payload) => ({
+                                ...payload,
+                                guard: {
+                                  ...payload.guard,
+                                  personalRating: Math.max(0, Math.min(5, Number.parseInt(event.target.value || "0", 10) || 0)),
+                                },
+                              }))}
+                              placeholder="0 a 5"
+                            />
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="border-0 shadow-sm">
+                        <CardHeader>
+                          <CardTitle className="text-base">Instalaciones</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <div className="space-y-2">
+                            <Label htmlFor="barrierStatus">Estado de barreras</Label>
+                            <Input
+                              id="barrierStatus"
+                              value={editorState.barrierStatus}
+                              onChange={(event) => setEditorState((current) => ({ ...current, barrierStatus: event.target.value }))}
+                              placeholder="Estado de barreras"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="vulnerabilities">Vulnerabilidades</Label>
+                            <Textarea
+                              id="vulnerabilities"
+                              value={editorState.vulnerabilities}
+                              onChange={(event) => setEditorState((current) => ({ ...current, vulnerabilities: event.target.value }))}
+                              placeholder="Vulnerabilidades"
+                              className="min-h-[100px]"
+                            />
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <Card className="border-0 shadow-sm">
+                        <CardHeader>
+                          <CardTitle className="text-base">Documentación del puesto</CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid gap-3 md:grid-cols-2">
+                          {documentDefinitions.map((item) => (
+                            <label key={item.key} className="flex items-center gap-3 rounded-lg bg-muted/50 p-3">
+                              <Checkbox
+                                checked={editorState.payload?.documents[item.key] ?? false}
+                                onCheckedChange={(checked) => updateStructuredPayload((payload) => ({
+                                  ...payload,
+                                  documents: {
+                                    ...payload.documents,
+                                    [item.key]: checked === true,
+                                  },
+                                }))}
+                              />
+                              <span className="text-sm font-medium">{item.label}</span>
+                            </label>
+                          ))}
+                        </CardContent>
+                      </Card>
+
+                      <Card className="border-0 shadow-sm">
+                        <CardHeader>
+                          <CardTitle className="text-base">Dotación</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          {equipmentDefinitions.map((item) => {
+                            const equipmentState = editorState.payload?.equipment[item.key]
+
+                            return (
+                              <div key={item.key} className="space-y-2 rounded-lg bg-muted/50 p-3">
+                                <div className="flex items-center justify-between gap-4">
+                                  <div>
+                                    <p className="font-medium">{item.label}</p>
+                                    <p className="text-sm text-muted-foreground">Marca si el elemento está conforme.</p>
+                                  </div>
+                                  <Switch
+                                    checked={equipmentState?.checked ?? false}
+                                    onCheckedChange={(checked) => updateStructuredPayload((payload) => ({
+                                      ...payload,
+                                      equipment: {
+                                        ...payload.equipment,
+                                        [item.key]: {
+                                          checked,
+                                          details: checked ? "" : payload.equipment[item.key]?.details || "",
+                                        },
+                                      },
+                                    }))}
+                                  />
+                                </div>
+                                {!(equipmentState?.checked ?? false) && (
+                                  <Textarea
+                                    value={equipmentState?.details || ""}
+                                    onChange={(event) => updateStructuredPayload((payload) => ({
+                                      ...payload,
+                                      equipment: {
+                                        ...payload.equipment,
+                                        [item.key]: {
+                                          checked: false,
+                                          details: event.target.value,
+                                        },
+                                      },
+                                    }))}
+                                    placeholder="Detalle de la novedad"
+                                    className="min-h-[90px]"
+                                  />
+                                )}
+                              </div>
+                            )
+                          })}
+                        </CardContent>
+                      </Card>
+                    </>
+                  )}
+
+                  <Card className="border-0 shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="text-base">Cierre</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <Label htmlFor="finalObservations">Observaciones finales</Label>
+                      <Textarea
+                        id="finalObservations"
+                        value={editorState.finalObservations}
+                        onChange={(event) => setEditorState((current) => ({ ...current, finalObservations: event.target.value }))}
+                        placeholder="Observaciones finales"
+                        className="min-h-[120px]"
+                      />
+                    </CardContent>
+                  </Card>
               </>
             ) : (
               <>
