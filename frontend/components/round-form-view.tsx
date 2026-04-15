@@ -108,13 +108,54 @@ const steps = [
   { id: 5, title: "Finalizar", icon: CheckCircle2 },
 ]
 
-function toDataUrl(file: File) {
+const MAX_IMAGE_DIMENSION = 1600
+const IMAGE_QUALITY = 0.72
+
+function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result))
     reader.onerror = () => reject(new Error(`No fue posible leer la foto ${file.name}`))
     reader.readAsDataURL(file)
   })
+}
+
+function loadImage(dataUrl: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error("No fue posible procesar la imagen seleccionada"))
+    image.src = dataUrl
+  })
+}
+
+async function toCompressedPhoto(file: File): Promise<StructuredPhoto> {
+  const originalDataUrl = await readFileAsDataUrl(file)
+  const image = await loadImage(originalDataUrl)
+
+  const largerSide = Math.max(image.width, image.height)
+  const scale = largerSide > MAX_IMAGE_DIMENSION ? MAX_IMAGE_DIMENSION / largerSide : 1
+  const width = Math.max(1, Math.round(image.width * scale))
+  const height = Math.max(1, Math.round(image.height * scale))
+
+  const canvas = document.createElement("canvas")
+  canvas.width = width
+  canvas.height = height
+
+  const context = canvas.getContext("2d")
+  if (!context) {
+    return {
+      name: file.name,
+      dataUrl: originalDataUrl,
+    }
+  }
+
+  context.drawImage(image, 0, 0, width, height)
+
+  return {
+    name: file.name.replace(/\.[^.]+$/, ".jpg"),
+    dataUrl: canvas.toDataURL("image/jpeg", IMAGE_QUALITY),
+  }
 }
 
 export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormViewProps) {
@@ -257,10 +298,7 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
       try {
         const remainingSlots = Math.max(0, 3 - formData.photos.length)
         const selectedFiles = Array.from(files).slice(0, remainingSlots)
-        const encodedPhotos = await Promise.all(selectedFiles.map(async (file) => ({
-          name: file.name,
-          dataUrl: await toDataUrl(file),
-        })))
+        const encodedPhotos = await Promise.all(selectedFiles.map((file) => toCompressedPhoto(file)))
 
         setFormData((current) => ({
           ...current,

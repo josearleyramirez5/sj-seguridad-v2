@@ -16,6 +16,7 @@ dotenv.config();
 const app: Express = express();
 const PORT = process.env.PORT || 5000;
 const isProduction = process.env.NODE_ENV === 'production';
+const requestBodyLimit = process.env.REQUEST_BODY_LIMIT || '12mb';
 
 const configuredOrigins = (process.env.CORS_ORIGIN || '')
   .split(',')
@@ -67,7 +68,8 @@ app.use(morgan(isProduction ? 'tiny' : 'combined', {
     return false;
   },
 }));
-app.use(express.json());
+app.use(express.json({ limit: requestBodyLimit }));
+app.use(express.urlencoded({ extended: true, limit: requestBodyLimit }));
 
 const healthHandler = async (req: Request, res: Response) => {
   try {
@@ -92,6 +94,13 @@ app.use('/api/rounds', verifyToken, roundsRouter);
 
 // Error handling
 app.use((err: any, req: Request, res: Response) => {
+  if (err?.type === 'entity.too.large') {
+    res.status(413).json({
+      error: 'El reporte excede el tamaño permitido. Reduce el peso o la cantidad de fotos e intenta nuevamente.',
+    });
+    return;
+  }
+
   console.error(err);
   res.status(500).json({ error: 'Internal server error' });
 });
