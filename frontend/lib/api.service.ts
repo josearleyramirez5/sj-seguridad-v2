@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios';
+import { parseReportDescription } from './report-structure';
 
 const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
 const localFallbackApiUrl = 'http://localhost:5000/api';
@@ -137,6 +138,12 @@ function mapRole(role: BackendRole): AppRole {
 }
 
 function parseAlertCount(description: string): number {
+  try {
+    return parseReportDescription(description).alertCount;
+  } catch {
+    // Fallback for legacy plain-text descriptions.
+  }
+
   const match = description.match(/^Alertas:\s*(\d+)/im);
   return match ? Number.parseInt(match[1], 10) : 0;
 }
@@ -280,6 +287,11 @@ export const apiService = {
 
   async getUsers(): Promise<User[]> {
     const response = await axiosInstance.get<BackendUser[]>('/users');
+    return response.data.map(mapUser);
+  },
+
+  async getUsersByRole(role: BackendRole): Promise<User[]> {
+    const response = await axiosInstance.get<BackendUser[]>(`/users/by-role/${role}`);
     return response.data.map(mapUser);
   },
 
@@ -448,6 +460,13 @@ export const apiService = {
 
   async deleteReport(id: string): Promise<void> {
     await axiosInstance.delete(`/reports/${id}`);
+  },
+
+  async addGuardObservation(id: string, observation: string): Promise<Report> {
+    const response = await axiosInstance.post<BackendReport>(`/reports/${id}/guard-observation`, {
+      observation,
+    });
+    return mapReport(response.data);
   },
 
   async healthCheck(): Promise<{ status: string; message: string }> {

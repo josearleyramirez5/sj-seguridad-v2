@@ -15,12 +15,19 @@ router.get('/', requireRole('SUPER_ADMIN'), async (req: AuthRequest, res: Respon
   }
 });
 
-// Obtener usuario por rol (Solo SUPER_ADMIN)
-router.get('/by-role/:role', requireRole('SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
+// Obtener usuario por rol
+router.get('/by-role/:role', requireRole('SUPER_ADMIN', 'SUPERVISOR'), async (req: AuthRequest, res: Response) => {
   const { role } = req.params;
+
+  if (req.user?.role === 'SUPERVISOR' && role !== 'GUARD') {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
   
   try {
-    const result = await query('SELECT id, nombre, email, role, is_active FROM usuarios WHERE role = $1', [role]);
+    const result = await query(
+      'SELECT id, nombre, email, role, is_active, created_at FROM usuarios WHERE role = $1 AND is_active = TRUE ORDER BY nombre ASC',
+      [role]
+    );
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch users' });

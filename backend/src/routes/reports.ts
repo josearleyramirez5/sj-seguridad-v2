@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import { AuthRequest, requireRole } from '../middleware/auth';
 import { query } from '../database';
 import { createNotificationForRole, createNotificationForUser } from '../utils/notifications';
+import { canViewStructuredReport, parseStructuredRoutingData, withGuardObservation } from '../utils/report-structure';
 
 const router = express.Router();
 
@@ -41,20 +42,24 @@ router.post('/', requireRole('SUPERVISOR', 'SUPER_ADMIN'), async (req: AuthReque
 // Obtener reportes
 router.get('/', async (req: AuthRequest, res: Response) => {
   try {
-    let result;
+    const result = await query('SELECT id, titulo, descripcion, locacion, supervisor_id, fecha, created_at FROM reportes ORDER BY created_at DESC');
 
     if (req.user?.role === 'SUPER_ADMIN') {
-      // Admin ve todos
-      result = await query('SELECT id, titulo, descripcion, locacion, supervisor_id, fecha, created_at FROM reportes ORDER BY created_at DESC');
-    } else {
-      // Supervisor solo ve suyos
-      result = await query(
-        'SELECT id, titulo, descripcion, locacion, supervisor_id, fecha, created_at FROM reportes WHERE supervisor_id = $1 ORDER BY created_at DESC',
-        [req.user?.id]
-      );
+      return res.json(result.rows);
     }
 
-    res.json(result.rows);
+    const filteredRows = result.rows.filter((row) => {
+      if (row.supervisor_id === req.user?.id) {
+        return true;
+      }
+
+      return canViewStructuredReport(row.descripcion || '', {
+        id: req.user!.id,
+        role: req.user!.role,
+      });
+    });
+
+    res.json(filteredRows);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch reports' });
   }
@@ -66,10 +71,36 @@ router.put('/:id', requireRole('SUPERVISOR', 'SUPER_ADMIN'), async (req: AuthReq
   const { titulo, descripcion, locacion } = req.body;
 
   try {
+    const currentReport = await query('SELECT descripcion, supervisor_id FROM reportes WHERE id = $1', [id]);
+
+    if (currentReport.rows.length === 0) {
+      return res.status(404).json({ error: 'Report not found or no permission' });
+    }
+
+    const metadata = parseStructuredRoutingData(currentReport.rows[0].descripcion || '');
+    const canEditAssignedReport = req.user?.role === 'SUPERVISOR' && metadata?.assignedSupervisor?.id === req.user.id;
+
     const result = await query(
       'UPDATE reportes SET titulo = $1, descripcion = $2, locacion = $3, updated_at = NOW() WHERE id = $4 AND (supervisor_id = $5 OR $6 = \'SUPER_ADMIN\') RETURNING id, titulo, descripcion, locacion, supervisor_id, fecha, created_at',
       [titulo, descripcion, locacion, id, req.user?.id, req.user?.role]
     );
+
+    if (result.rows.length === 0 && canEditAssignedReport) {
+      const assignedResult = await query(
+        'UPDATE reportes SET titulo = $1, descripcion = $2, locacion = $3, updated_at = NOW() WHERE id = $4 RETURNING id, titulo, descripcion, locacion, supervisor_id, fecha, created_at',
+        [titulo, descripcion, locacion, id]
+      );
+
+      if (assignedResult.rows.length > 0) {
+        await createNotificationForUser(
+          assignedResult.rows[0].supervisor_id,
+          'Reporte actualizado',
+          `El reporte ${titulo} fue actualizado en ${locacion}.`
+        );
+
+        return res.json(assignedResult.rows[0]);
+      }
+    }
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Report not found or no permission' });
@@ -85,6 +116,59 @@ router.put('/:id', requireRole('SUPERVISOR', 'SUPER_ADMIN'), async (req: AuthReq
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to update report' });
+  }
+});
+
+router.post('/:id/guard-observation', requireRole('GUARD'), async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const { observation } = req.body;
+
+  if (!observation || !String(observation).trim()) {
+    return res.status(400).json({ error: 'Observation is required' });
+  }
+
+  try {
+    const currentReport = await query('SELECT id, titulo, descripcion FROM reportes WHERE id = $1', [id]);
+
+    if (currentReport.rows.length === 0) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const metadata = parseStructuredRoutingData(currentReport.rows[0].descripcion || '');
+
+    if (!metadata || metadata.guard?.userId !== req.user?.id) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const updatedDescription = withGuardObservation(currentReport.rows[0].descripcion, String(observation).trim());
+
+    if (!updatedDescription) {
+      return res.status(400).json({ error: 'Structured report data is required' });
+    }
+
+    const result = await query(
+      'UPDATE reportes SET descripcion = $1, updated_at = NOW() WHERE id = $2 RETURNING id, titulo, descripcion, locacion, supervisor_id, fecha, created_at',
+      [updatedDescription, id]
+    );
+
+    if (metadata.assignedSupervisor?.id) {
+      await createNotificationForUser(
+        metadata.assignedSupervisor.id,
+        'Observación del guarda',
+        `${req.user?.email} registró una observación sobre el reporte ${currentReport.rows[0].titulo}.`
+      );
+    }
+
+    await createNotificationForRole(
+      'SUPER_ADMIN',
+      'Observación enviada por guarda',
+      `${req.user?.email} envió una observación para el reporte ${currentReport.rows[0].titulo}.`
+    );
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to save guard observation' });
   }
 });
 

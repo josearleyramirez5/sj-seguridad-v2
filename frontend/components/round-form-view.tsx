@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState, type ChangeEvent } from "react"
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -13,11 +13,11 @@ import {
   Star,
   CheckCircle2,
   X,
-  Upload,
   RefreshCw
 } from "lucide-react"
 import { useGPS } from "@/hooks/use-gps"
-import { apiService } from "@/lib/api.service"
+import { apiService, type User as AppUser } from "@/lib/api.service"
+import { buildReportDescription, type StructuredPhoto } from "@/lib/report-structure"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -33,14 +33,17 @@ import { toast } from "sonner"
 interface RoundFormViewProps {
   onComplete: () => void
   onCancel: () => void
+  currentUser: AppUser | null
 }
 
 interface FormData {
   // Context
   supervisor: string
+  supervisorName: string
   clientName: string
   postName: string
   // Step 1: Guard identification
+  guardUserId: string
   guardName: string
   guardId: string
   documentationOk: boolean
@@ -56,7 +59,7 @@ interface FormData {
   // Step 3: Facilities
   barrierStatus: string
   vulnerabilities: string
-  photos: File[]
+  photos: StructuredPhoto[]
   // Step 4: Documentation
   documents: {
     generalInstructions: boolean
@@ -70,8 +73,10 @@ interface FormData {
 
 const initialFormData: FormData = {
   supervisor: "",
+  supervisorName: "",
   clientName: "",
   postName: "",
+  guardUserId: "",
   guardName: "",
   guardId: "",
   documentationOk: false,
@@ -103,39 +108,58 @@ const steps = [
   { id: 5, title: "Finalizar", icon: CheckCircle2 },
 ]
 
-function buildInspectionDescription(formData: FormData, alertCount: number, gpsCoords: { lat: number; lng: number; accuracy: number; timestamp: string } | null) {
-  const equipmentSummary = Object.entries(formData.equipment)
-    .map(([key, value]) => `${key}=${value.checked ? "ok" : value.details.trim() || "pendiente"}`)
-    .join("; ")
-
-  const documentSummary = Object.entries(formData.documents)
-    .map(([key, value]) => `${key}=${value ? "si" : "no"}`)
-    .join("; ")
-
-  return [
-    `Cliente: ${formData.clientName}`,
-    `Puesto: ${formData.postName}`,
-    `Guarda: ${formData.guardName}`,
-    `Cedula: ${formData.guardId}`,
-    `Documentacion: ${formData.documentationOk ? "OK" : "PENDIENTE"}`,
-    `Presentacion: ${formData.personalRating}/5`,
-    `Barreras: ${formData.barrierStatus || "sin_registro"}`,
-    `Vulnerabilidades: ${formData.vulnerabilities.trim() || "ninguna"}`,
-    `GPS: ${gpsCoords ? `${gpsCoords.lat},${gpsCoords.lng}` : "sin_datos"}`,
-    `Documentos: ${documentSummary}`,
-    `Dotacion: ${equipmentSummary}`,
-    `Observaciones: ${formData.finalObservations.trim() || "Sin observaciones adicionales."}`,
-    `Alertas: ${alertCount}`,
-  ].join("\n")
+function toDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(new Error(`No fue posible leer la foto ${file.name}`))
+    reader.readAsDataURL(file)
+  })
 }
 
-export function RoundFormView({ onComplete, onCancel }: RoundFormViewProps) {
+export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormViewProps) {
   const [currentStep, setCurrentStep] = useState(0)
   const [formData, setFormData] = useState<FormData>(initialFormData)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [supervisors, setSupervisors] = useState<AppUser[]>([])
+  const [guards, setGuards] = useState<AppUser[]>([])
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true)
   
   // Use real GPS hook
   const { status: gpsStatus, coordinates: gpsCoords, captureLocation, error: gpsError } = useGPS()
+
+  useEffect(() => {
+    const loadUsers = async () => {
+      if (!currentUser) {
+        setIsLoadingUsers(false)
+        return
+      }
+
+      try {
+        const guardsData = await apiService.getUsersByRole("GUARD")
+        setGuards(guardsData)
+
+        if (currentUser.role === "admin") {
+          const supervisorsData = await apiService.getUsersByRole("SUPERVISOR")
+          setSupervisors(supervisorsData)
+        } else {
+          setSupervisors([currentUser])
+          setFormData((current) => ({
+            ...current,
+            supervisor: currentUser.id,
+            supervisorName: currentUser.name,
+          }))
+        }
+      } catch (error) {
+        console.error("Error loading users for round form:", error)
+        toast.error(error instanceof Error ? error.message : "No fue posible cargar supervisores y guardas")
+      } finally {
+        setIsLoadingUsers(false)
+      }
+    }
+
+    void loadUsers()
+  }, [currentUser])
 
   const progress = ((currentStep + 1) / (steps.length + 1)) * 100
 
@@ -152,8 +176,15 @@ export function RoundFormView({ onComplete, onCancel }: RoundFormViewProps) {
   }
 
   const handleSubmit = async () => {
-    if (!formData.clientName || !formData.postName || !formData.guardName || !formData.guardId) {
-      toast.error("Completa cliente, puesto y datos del guarda antes de finalizar")
+    if (!currentUser) {
+      toast.error("No se encontró el usuario autenticado")
+      return
+    }
+
+    const supervisorRequired = currentUser.role === "admin" ? !formData.supervisor : false
+
+    if (!formData.clientName || !formData.postName || !formData.guardUserId || !formData.guardName || !formData.guardId || supervisorRequired) {
+      toast.error("Completa cliente, puesto, supervisor y datos del guarda antes de finalizar")
       return
     }
 
@@ -163,10 +194,45 @@ export function RoundFormView({ onComplete, onCancel }: RoundFormViewProps) {
     const equipmentIssues = Object.values(formData.equipment).filter(e => !e.checked).length
     const hasVulnerabilities = formData.vulnerabilities.trim().length > 0
     const alertCount = equipmentIssues + (hasVulnerabilities ? 1 : 0)
+    const selectedSupervisor = supervisors.find((item) => item.id === formData.supervisor)
+      || (currentUser.role === "supervisor" ? currentUser : null)
+    const selectedGuard = guards.find((item) => item.id === formData.guardUserId)
     
     const title = `${formData.clientName} - ${formData.postName}`
     const location = `${formData.clientName} / ${formData.postName}`
-    const description = buildInspectionDescription(formData, alertCount, gpsCoords)
+    const description = buildReportDescription({
+      version: 2,
+      clientName: formData.clientName.trim(),
+      postName: formData.postName.trim(),
+      assignedSupervisor: selectedSupervisor ? {
+        id: selectedSupervisor.id,
+        name: selectedSupervisor.name,
+        email: selectedSupervisor.email,
+        role: selectedSupervisor.backendRole,
+      } : null,
+      generatedBy: {
+        id: currentUser.id,
+        name: currentUser.name,
+        email: currentUser.email,
+        role: currentUser.backendRole,
+      },
+      guard: {
+        userId: formData.guardUserId,
+        name: formData.guardName,
+        email: selectedGuard?.email,
+        cedula: formData.guardId,
+        documentationOk: formData.documentationOk,
+        personalRating: formData.personalRating,
+      },
+      equipment: formData.equipment,
+      barrierStatus: formData.barrierStatus || "sin_registro",
+      vulnerabilities: formData.vulnerabilities.trim() || "ninguna",
+      photos: formData.photos,
+      documents: formData.documents,
+      finalObservations: formData.finalObservations.trim() || "Sin observaciones adicionales.",
+      gps: gpsCoords,
+      alertCount,
+    })
 
     try {
       await apiService.completeRound({
@@ -185,14 +251,26 @@ export function RoundFormView({ onComplete, onCancel }: RoundFormViewProps) {
     }
   }
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (files && files.length > 0) {
-      const newPhotos = [...formData.photos]
-      for (let i = 0; i < files.length && newPhotos.length < 3; i++) {
-        newPhotos.push(files[i])
+      try {
+        const remainingSlots = Math.max(0, 3 - formData.photos.length)
+        const selectedFiles = Array.from(files).slice(0, remainingSlots)
+        const encodedPhotos = await Promise.all(selectedFiles.map(async (file) => ({
+          name: file.name,
+          dataUrl: await toDataUrl(file),
+        })))
+
+        setFormData((current) => ({
+          ...current,
+          photos: [...current.photos, ...encodedPhotos],
+        }))
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "No fue posible adjuntar las fotos")
       }
-      setFormData({ ...formData, photos: newPhotos })
+
+      e.target.value = ""
     }
   }
 
@@ -233,19 +311,30 @@ export function RoundFormView({ onComplete, onCancel }: RoundFormViewProps) {
       <CardContent className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="supervisor">Seleccionar Supervisor</Label>
-          <Select 
-            value={formData.supervisor} 
-            onValueChange={(value) => setFormData({ ...formData, supervisor: value })}
-          >
-            <SelectTrigger className="h-12">
-              <SelectValue placeholder="Seleccione un supervisor" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="supervisor1">Carlos Rodríguez</SelectItem>
-              <SelectItem value="supervisor2">María García</SelectItem>
-              <SelectItem value="supervisor3">Juan Martínez</SelectItem>
-            </SelectContent>
-          </Select>
+          {currentUser?.role === "admin" ? (
+            <Select 
+              value={formData.supervisor} 
+              onValueChange={(value) => {
+                const selected = supervisors.find((item) => item.id === value)
+                setFormData({
+                  ...formData,
+                  supervisor: value,
+                  supervisorName: selected?.name || "",
+                })
+              }}
+            >
+              <SelectTrigger className="h-12">
+                <SelectValue placeholder={isLoadingUsers ? "Cargando supervisores..." : "Seleccione un supervisor"} />
+              </SelectTrigger>
+              <SelectContent>
+                {supervisors.map((supervisor) => (
+                  <SelectItem key={supervisor.id} value={supervisor.id}>{supervisor.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input value={formData.supervisorName || currentUser?.name || ""} disabled className="h-12" />
+          )}
         </div>
         <div className="space-y-2">
           <Label htmlFor="clientName">Razón Social del Cliente</Label>
@@ -281,14 +370,32 @@ export function RoundFormView({ onComplete, onCancel }: RoundFormViewProps) {
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="space-y-2">
-          <Label htmlFor="guardName">Nombre del Guarda</Label>
-          <Input
-            id="guardName"
-            placeholder="Nombre completo"
-            value={formData.guardName}
-            onChange={(e) => setFormData({ ...formData, guardName: e.target.value })}
-            className="h-12"
-          />
+          <Label htmlFor="guardName">Guarda asignado</Label>
+          <Select
+            value={formData.guardUserId}
+            onValueChange={(value) => {
+              const selected = guards.find((item) => item.id === value)
+              setFormData({
+                ...formData,
+                guardUserId: value,
+                guardName: selected?.name || "",
+              })
+            }}
+          >
+            <SelectTrigger className="h-12">
+              <SelectValue placeholder={isLoadingUsers ? "Cargando guardas..." : "Seleccione un guarda"} />
+            </SelectTrigger>
+            <SelectContent>
+              {guards.map((guard) => (
+                <SelectItem key={guard.id} value={guard.id}>{guard.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {formData.guardUserId && (
+            <p className="text-sm text-muted-foreground">
+              {guards.find((item) => item.id === formData.guardUserId)?.email}
+            </p>
+          )}
         </div>
         <div className="space-y-2">
           <Label htmlFor="guardId">Cédula del Guarda</Label>
@@ -494,7 +601,7 @@ export function RoundFormView({ onComplete, onCancel }: RoundFormViewProps) {
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={URL.createObjectURL(photo)}
+                      src={photo.dataUrl}
                       alt={`Evidencia ${index + 1}`}
                       className="w-full h-full object-cover"
                     />
@@ -593,6 +700,7 @@ export function RoundFormView({ onComplete, onCancel }: RoundFormViewProps) {
           <div className="text-sm text-muted-foreground space-y-1">
             <p><span className="font-medium">Cliente:</span> {formData.clientName || "No especificado"}</p>
             <p><span className="font-medium">Puesto:</span> {formData.postName || "No especificado"}</p>
+            <p><span className="font-medium">Supervisor:</span> {formData.supervisorName || currentUser?.name || "No especificado"}</p>
             <p><span className="font-medium">Guarda:</span> {formData.guardName || "No especificado"}</p>
             <p><span className="font-medium">Fotos adjuntas:</span> {formData.photos.length}</p>
           </div>

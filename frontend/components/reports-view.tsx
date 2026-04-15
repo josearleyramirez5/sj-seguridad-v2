@@ -1,30 +1,55 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { AlertTriangle, Clock, FileText, MapPin, Pencil, Plus, Search, Shield, Trash2, User, X } from "lucide-react"
+import { AlertTriangle, Camera, Clock, FileText, MapPin, Pencil, Plus, Search, Shield, Trash2, User } from "lucide-react"
 import { apiService, type Report, type User as AppUser } from "@/lib/api.service"
+import { buildReportDescription, getDocumentEntries, getEquipmentEntries, parseReportDescription, type StructuredReportPayload } from "@/lib/report-structure"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { toast } from "sonner"
 
 type FilterStatus = "all" | Report["status"]
+type EditorMode = "plain" | "structured"
 
-const equipmentLabels: Record<string, string> = {
-  armament: "Armamento",
-  box: "Cajilla",
-  radios: "Radios",
-  garrett: "Garrett",
-  canine: "Caninos",
+interface ReportsViewProps {
+  user: AppUser | null
 }
 
-const documentLabels: Record<string, string> = {
-  generalInstructions: "Consignas generales",
-  particularInstructions: "Consignas particulares",
-  protocols: "Protocolos",
-  manuals: "Manuales",
+interface EditorState {
+  title: string
+  location: string
+  description: string
+  clientName: string
+  postName: string
+  barrierStatus: string
+  vulnerabilities: string
+  finalObservations: string
+  mode: EditorMode
+  payload: StructuredReportPayload | null
+}
+
+interface ReportDetailProps {
+  report: Report
+  user: AppUser | null
+  onClose: () => void
+  onReportUpdated: (updatedReport: Report) => void
+}
+
+const initialEditorState: EditorState = {
+  title: "",
+  location: "",
+  description: "",
+  clientName: "",
+  postName: "",
+  barrierStatus: "sin_registro",
+  vulnerabilities: "",
+  finalObservations: "",
+  mode: "plain",
+  payload: null,
 }
 
 function formatDateTime(value: string) {
@@ -45,161 +70,175 @@ function getStatusBadge(status: Report["status"]) {
   return { label: "Completado", className: "bg-success/10 text-success border-success/20" }
 }
 
-function parsePairs(rawValue: string) {
-  return rawValue
-    .split(";")
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => {
-      const [key, ...rest] = item.split("=")
-      return { key: key.trim(), value: rest.join("=").trim() }
-    })
-}
+function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailProps) {
+  const details = parseReportDescription(report.description)
+  const badge = getStatusBadge(report.status)
+  const equipment = getEquipmentEntries(details)
+  const documents = getDocumentEntries(details)
+  const [guardObservation, setGuardObservation] = useState(details.guardObservation || "")
+  const [isSubmittingObservation, setIsSubmittingObservation] = useState(false)
 
-function parseStructuredDescription(description: string) {
-  const values = new Map<string, string>()
+  const canAddObservation = user?.role === "guard" && details.version === 2 && details.guard.userId === user.id
 
-  description.split("\n").forEach((line) => {
-    const separatorIndex = line.indexOf(":")
-    if (separatorIndex === -1) {
+  const handleSaveObservation = async () => {
+    if (!guardObservation.trim()) {
+      toast.error("Escribe una observación antes de enviarla")
       return
     }
 
-    const key = line.slice(0, separatorIndex).trim()
-    const value = line.slice(separatorIndex + 1).trim()
-    values.set(key, value)
-  })
+    setIsSubmittingObservation(true)
 
-  const gpsValue = values.get("GPS")
-  const gps = gpsValue && gpsValue !== "sin_datos"
-    ? gpsValue.split(",").map((item) => Number.parseFloat(item.trim()))
-    : null
-
-  return {
-    clientName: values.get("Cliente") || "Sin cliente",
-    postName: values.get("Puesto") || "Sin puesto",
-    guardName: values.get("Guarda") || "No registrado",
-    guardId: values.get("Cedula") || "No registrada",
-    documentation: values.get("Documentacion") || "Sin dato",
-    presentation: values.get("Presentacion") || "0/5",
-    barrierStatus: values.get("Barreras") || "sin_registro",
-    vulnerabilities: values.get("Vulnerabilidades") || "ninguna",
-    observations: values.get("Observaciones") || "Sin observaciones adicionales.",
-    gps,
-    equipment: parsePairs(values.get("Dotacion") || ""),
-    documents: parsePairs(values.get("Documentos") || ""),
+    try {
+      const updated = await apiService.addGuardObservation(report.id, guardObservation.trim())
+      onReportUpdated(updated)
+      toast.success("Observación enviada")
+    } catch (error) {
+      console.error("Error saving guard observation:", error)
+      toast.error(error instanceof Error ? error.message : "No fue posible guardar la observación")
+    } finally {
+      setIsSubmittingObservation(false)
+    }
   }
-}
-
-interface ReportDetailProps {
-  report: Report
-  onClose: () => void
-}
-
-function ReportDetail({ report, onClose }: ReportDetailProps) {
-  const details = parseStructuredDescription(report.description)
-  const badge = getStatusBadge(report.status)
 
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-foreground/40" onClick={onClose} />
-      <aside className="fixed inset-y-0 right-0 z-50 w-full max-w-xl overflow-y-auto bg-background shadow-2xl">
-        <div className="sticky top-0 flex items-start justify-between gap-4 bg-primary px-4 py-5 text-primary-foreground">
-          <div>
-            <p className="text-sm text-primary-foreground/80">{formatDateTime(report.createdAt)}</p>
-            <h2 className="text-xl font-bold">{details.clientName}</h2>
-            <p className="text-sm text-primary-foreground/80">{details.postName}</p>
-          </div>
-          <Button variant="ghost" size="icon" className="text-primary-foreground hover:bg-primary-foreground/10" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{details.clientName}</DialogTitle>
+          <DialogDescription>
+            {details.postName} · {formatDateTime(report.createdAt)}
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="space-y-4 p-4">
+        <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
             <Badge className={badge.className}>{badge.label}</Badge>
             <Badge variant="outline">{report.alertCount} alertas</Badge>
             <Badge variant="outline">{report.location}</Badge>
           </div>
 
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base"><User className="h-4 w-4 text-primary" /> Guarda</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-base"><User className="h-4 w-4 text-primary" /> Responsables</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">Nombre</span><span className="font-medium">{details.guardName}</span></div>
-              <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">Cédula</span><span className="font-medium">{details.guardId}</span></div>
-              <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">Documentación</span><span className="font-medium">{details.documentation}</span></div>
-              <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">Presentación</span><span className="font-medium">{details.presentation}</span></div>
+            <CardContent className="grid gap-3 text-sm md:grid-cols-3">
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-muted-foreground">Supervisor asignado</p>
+                <p className="font-medium">{details.assignedSupervisor?.name || "No asignado"}</p>
+                <p className="text-muted-foreground">{details.assignedSupervisor?.email || "Sin correo"}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-muted-foreground">Generado por</p>
+                <p className="font-medium">{details.generatedBy?.name || "No registrado"}</p>
+                <p className="text-muted-foreground">{details.generatedBy?.email || "Sin correo"}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-muted-foreground">Guarda</p>
+                <p className="font-medium">{details.guard.name}</p>
+                <p className="text-muted-foreground">Cédula: {details.guard.cedula}</p>
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base"><Shield className="h-4 w-4 text-primary" /> Dotación</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              {details.equipment.length > 0 ? details.equipment.map((item) => (
+            <CardContent className="grid gap-3 text-sm md:grid-cols-2">
+              {equipment.length > 0 ? equipment.map((item) => (
                 <div key={item.key} className="rounded-lg bg-muted/50 p-3">
-                  <div className="font-medium">{equipmentLabels[item.key] || item.key}</div>
-                  <div className="text-muted-foreground">{item.value === "ok" ? "Sin novedades" : item.value}</div>
+                  <p className="font-medium">{item.label}</p>
+                  <p className="text-muted-foreground">{item.checked ? "Sin novedades" : item.details || "Pendiente por validar"}</p>
                 </div>
               )) : <p className="text-muted-foreground">Sin información de dotación.</p>}
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base"><MapPin className="h-4 w-4 text-primary" /> Instalaciones</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div className="flex items-center justify-between gap-4"><span className="text-muted-foreground">Barreras</span><span className="font-medium capitalize">{details.barrierStatus.replaceAll("_", " ")}</span></div>
-              <div>
-                <p className="text-muted-foreground">Vulnerabilidades</p>
-                <p className="mt-1 font-medium">{details.vulnerabilities}</p>
+            <CardContent className="space-y-3 text-sm">
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-muted-foreground">Barreras perimetrales</p>
+                <p className="font-medium capitalize">{details.barrierStatus.replaceAll("_", " ")}</p>
               </div>
-              {details.gps && details.gps.length === 2 && (
-                <div>
-                  <p className="text-muted-foreground">GPS</p>
-                  <p className="mt-1 font-medium">Lat {details.gps[0].toFixed(5)} | Lng {details.gps[1].toFixed(5)}</p>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-muted-foreground">Vulnerabilidades</p>
+                <p className="font-medium">{details.vulnerabilities}</p>
+              </div>
+              {details.gps && (
+                <div className="rounded-lg bg-muted/50 p-3">
+                  <p className="text-muted-foreground">Ubicación GPS</p>
+                  <p className="font-medium">Lat {details.gps.lat.toFixed(5)} | Lng {details.gps.lng.toFixed(5)}</p>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base"><FileText className="h-4 w-4 text-primary" /> Documentación y notas</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-base"><FileText className="h-4 w-4 text-primary" /> Documentación y observaciones</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
-              <div className="space-y-2">
-                {details.documents.length > 0 ? details.documents.map((item) => (
-                  <div key={item.key} className="flex items-center justify-between gap-4 rounded-lg bg-muted/50 px-3 py-2">
-                    <span>{documentLabels[item.key] || item.key}</span>
-                    <Badge variant={item.value === "si" ? "default" : "outline"}>{item.value === "si" ? "Disponible" : "Pendiente"}</Badge>
+              <div className="grid gap-2 md:grid-cols-2">
+                {documents.length > 0 ? documents.map((item) => (
+                  <div key={item.key} className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
+                    <span>{item.label}</span>
+                    <Badge variant={item.value ? "default" : "outline"}>{item.value ? "Disponible" : "Pendiente"}</Badge>
                   </div>
                 )) : <p className="text-muted-foreground">Sin información documental.</p>}
               </div>
-              <div>
+              <div className="rounded-lg bg-muted/50 p-3">
                 <p className="text-muted-foreground">Observaciones finales</p>
-                <p className="mt-1 font-medium">{details.observations}</p>
+                <p className="font-medium">{details.finalObservations}</p>
               </div>
+              {(details.guardObservation || canAddObservation) && (
+                <div className="rounded-lg bg-muted/50 p-3">
+                  <p className="text-muted-foreground">Observación del guarda</p>
+                  {canAddObservation ? (
+                    <div className="space-y-3">
+                      <Textarea
+                        value={guardObservation}
+                        onChange={(event) => setGuardObservation(event.target.value)}
+                        placeholder="Escribe la novedad u observación del servicio"
+                        className="min-h-[120px]"
+                      />
+                      <Button onClick={handleSaveObservation} disabled={isSubmittingObservation}>
+                        {isSubmittingObservation ? "Enviando..." : "Enviar observación"}
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="font-medium">{details.guardObservation}</p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base"><Camera className="h-4 w-4 text-primary" /> Evidencia fotográfica</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {details.photos.length > 0 ? (
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                  {details.photos.map((photo, index) => (
+                    <div key={`${photo.name}-${index}`} className="overflow-hidden rounded-lg border bg-muted/30">
+                      <img src={photo.dataUrl} alt={photo.name || `Foto ${index + 1}`} className="aspect-square w-full object-cover" />
+                      <div className="px-3 py-2 text-xs text-muted-foreground">{photo.name || `Foto ${index + 1}`}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Este reporte no tiene fotos adjuntas.</p>
+              )}
             </CardContent>
           </Card>
         </div>
-      </aside>
-    </>
+      </DialogContent>
+    </Dialog>
   )
-}
-
-interface ReportsViewProps {
-  user: AppUser | null
-}
-
-const initialFormState = {
-  title: "",
-  location: "",
-  description: "",
 }
 
 export function ReportsView({ user }: ReportsViewProps) {
@@ -209,9 +248,9 @@ export function ReportsView({ user }: ReportsViewProps) {
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all")
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [isFormVisible, setIsFormVisible] = useState(false)
+  const [isEditorOpen, setIsEditorOpen] = useState(false)
   const [editingReportId, setEditingReportId] = useState<string | null>(null)
-  const [formData, setFormData] = useState(initialFormState)
+  const [editorState, setEditorState] = useState<EditorState>(initialEditorState)
 
   const canManageReports = user?.role === "admin" || user?.role === "supervisor"
   const canDeleteReports = user?.role === "admin"
@@ -232,25 +271,51 @@ export function ReportsView({ user }: ReportsViewProps) {
     }
   }
 
-  const resetForm = () => {
-    setFormData(initialFormState)
+  const handleReportUpdated = (updatedReport: Report) => {
+    setReports((current) => current.map((report) => report.id === updatedReport.id ? updatedReport : report))
+    setSelectedReport((current) => current?.id === updatedReport.id ? updatedReport : current)
+  }
+
+  const openCreateModal = () => {
     setEditingReportId(null)
-    setIsFormVisible(false)
+    setEditorState(initialEditorState)
+    setIsEditorOpen(true)
   }
 
   const handleEdit = (report: Report) => {
+    const parsed = parseReportDescription(report.description)
+    const isStructured = parsed.version === 2
+
     setEditingReportId(report.id)
-    setFormData({
+    setEditorState({
       title: report.title,
       location: report.location,
       description: report.description,
+      clientName: parsed.clientName,
+      postName: parsed.postName,
+      barrierStatus: parsed.barrierStatus,
+      vulnerabilities: parsed.vulnerabilities,
+      finalObservations: parsed.finalObservations,
+      mode: isStructured ? "structured" : "plain",
+      payload: isStructured ? parsed : null,
     })
-    setIsFormVisible(true)
+    setIsEditorOpen(true)
+  }
+
+  const resetEditor = () => {
+    setEditorState(initialEditorState)
+    setEditingReportId(null)
+    setIsEditorOpen(false)
   }
 
   const handleSubmit = async () => {
-    if (!formData.title.trim() || !formData.location.trim() || !formData.description.trim()) {
-      toast.error("Completa título, ubicación y descripción del reporte")
+    if (editorState.mode === "plain") {
+      if (!editorState.title.trim() || !editorState.location.trim() || !editorState.description.trim()) {
+        toast.error("Completa título, ubicación y descripción del reporte")
+        return
+      }
+    } else if (!editorState.clientName.trim() || !editorState.postName.trim() || !editorState.payload) {
+      toast.error("Completa cliente y puesto antes de guardar")
       return
     }
 
@@ -258,19 +323,39 @@ export function ReportsView({ user }: ReportsViewProps) {
 
     try {
       if (editingReportId) {
-        const updated = await apiService.updateReport(editingReportId, {
-          title: formData.title,
-          location: formData.location,
-          description: formData.description,
-        })
+        if (editorState.mode === "structured" && editorState.payload) {
+          const updatedPayload: StructuredReportPayload = {
+            ...editorState.payload,
+            clientName: editorState.clientName.trim(),
+            postName: editorState.postName.trim(),
+            barrierStatus: editorState.barrierStatus || "sin_registro",
+            vulnerabilities: editorState.vulnerabilities.trim() || "ninguna",
+            finalObservations: editorState.finalObservations.trim() || "Sin observaciones adicionales.",
+          }
 
-        setReports((current) => current.map((report) => report.id === editingReportId ? updated : report))
+          const updated = await apiService.updateReport(editingReportId, {
+            title: `${updatedPayload.clientName} - ${updatedPayload.postName}`,
+            location: `${updatedPayload.clientName} / ${updatedPayload.postName}`,
+            description: buildReportDescription(updatedPayload),
+          })
+
+          handleReportUpdated(updated)
+        } else {
+          const updated = await apiService.updateReport(editingReportId, {
+            title: editorState.title.trim(),
+            location: editorState.location.trim(),
+            description: editorState.description.trim(),
+          })
+
+          handleReportUpdated(updated)
+        }
+
         toast.success("Reporte actualizado")
       } else {
         const created = await apiService.createReport({
-          title: formData.title,
-          location: formData.location,
-          description: formData.description,
+          title: editorState.title.trim(),
+          location: editorState.location.trim(),
+          description: editorState.description.trim(),
           scheduledAt: new Date().toISOString(),
         })
 
@@ -278,7 +363,7 @@ export function ReportsView({ user }: ReportsViewProps) {
         toast.success("Reporte creado")
       }
 
-      resetForm()
+      resetEditor()
     } catch (error) {
       console.error("Error saving report:", error)
       toast.error(error instanceof Error ? error.message : "No fue posible guardar el reporte")
@@ -313,7 +398,16 @@ export function ReportsView({ user }: ReportsViewProps) {
   const filteredReports = useMemo(() => {
     return reports.filter((report) => {
       const query = search.trim().toLowerCase()
-      const matchesSearch = !query || [report.title, report.location, report.description].some((field) => field.toLowerCase().includes(query))
+      const parsed = parseReportDescription(report.description)
+      const matchesSearch = !query || [
+        report.title,
+        report.location,
+        parsed.clientName,
+        parsed.postName,
+        parsed.guard.name,
+        parsed.finalObservations,
+        parsed.guardObservation || "",
+      ].some((field) => field.toLowerCase().includes(query))
       const matchesStatus = statusFilter === "all" || report.status === statusFilter
       return matchesSearch && matchesStatus
     })
@@ -330,46 +424,14 @@ export function ReportsView({ user }: ReportsViewProps) {
             <p className="text-sm text-primary-foreground/80">Historial real de inspecciones registradas</p>
           </div>
           {canManageReports && (
-            <Button variant="secondary" size="sm" onClick={() => setIsFormVisible((value) => !value)}>
-              <Plus className="mr-2 h-4 w-4" /> {isFormVisible ? "Cerrar" : "Nuevo"}
+            <Button variant="secondary" size="sm" onClick={openCreateModal}>
+              <Plus className="mr-2 h-4 w-4" /> Nuevo
             </Button>
           )}
         </div>
       </header>
 
       <main className="space-y-4 p-4">
-        {canManageReports && isFormVisible && (
-          <Card className="border-0 shadow-md">
-            <CardHeader>
-              <CardTitle>{editingReportId ? "Editar reporte" : "Crear reporte"}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Input
-                value={formData.title}
-                onChange={(event) => setFormData((current) => ({ ...current, title: event.target.value }))}
-                placeholder="Título del reporte"
-              />
-              <Input
-                value={formData.location}
-                onChange={(event) => setFormData((current) => ({ ...current, location: event.target.value }))}
-                placeholder="Ubicación o puesto"
-              />
-              <Textarea
-                value={formData.description}
-                onChange={(event) => setFormData((current) => ({ ...current, description: event.target.value }))}
-                placeholder="Descripción operativa del reporte"
-                className="min-h-[140px]"
-              />
-              <div className="flex gap-2">
-                <Button onClick={handleSubmit} disabled={isSaving}>
-                  {isSaving ? "Guardando..." : editingReportId ? "Actualizar" : "Crear"}
-                </Button>
-                <Button variant="outline" onClick={resetForm} disabled={isSaving}>Cancelar</Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
         <div className="grid grid-cols-2 gap-3">
           <Card className="border-0 shadow-md">
             <CardContent className="p-4">
@@ -389,7 +451,7 @@ export function ReportsView({ user }: ReportsViewProps) {
           <CardContent className="space-y-3 p-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por cliente, puesto o detalle" className="pl-9" />
+              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por cliente, puesto, guarda o detalle" className="pl-9" />
             </div>
             <div className="flex gap-2">
               <Button variant={statusFilter === "all" ? "default" : "outline"} size="sm" onClick={() => setStatusFilter("all")}>Todos</Button>
@@ -400,13 +462,17 @@ export function ReportsView({ user }: ReportsViewProps) {
         </Card>
 
         {isLoading ? (
-          <Card className="border-0 shadow-md"><CardContent className="p-6 text-center text-muted-foreground">Cargando reportes...</CardContent></Card>
+          <Card className="border-0 shadow-md">
+            <CardContent className="p-6 text-center text-muted-foreground">Cargando reportes...</CardContent>
+          </Card>
         ) : filteredReports.length === 0 ? (
-          <Card className="border-0 shadow-md"><CardContent className="p-6 text-center text-muted-foreground">No hay reportes que coincidan con el filtro actual.</CardContent></Card>
+          <Card className="border-0 shadow-md">
+            <CardContent className="p-6 text-center text-muted-foreground">No hay reportes que coincidan con el filtro actual.</CardContent>
+          </Card>
         ) : (
           filteredReports.map((report) => {
             const badge = getStatusBadge(report.status)
-            const details = parseStructuredDescription(report.description)
+            const details = parseReportDescription(report.description)
 
             return (
               <Card key={report.id} className="border-0 shadow-md">
@@ -422,12 +488,12 @@ export function ReportsView({ user }: ReportsViewProps) {
                   <div className="grid gap-2 text-sm text-muted-foreground">
                     <div className="flex items-center gap-2"><MapPin className="h-4 w-4" /><span>{report.location}</span></div>
                     <div className="flex items-center gap-2"><Clock className="h-4 w-4" /><span>{formatDateTime(report.createdAt)}</span></div>
-                    <div className="flex items-center gap-2"><User className="h-4 w-4" /><span>{details.guardName}</span></div>
+                    <div className="flex items-center gap-2"><User className="h-4 w-4" /><span>{details.guard.name}</span></div>
                   </div>
 
                   <div className="rounded-lg bg-muted/50 p-3 text-sm">
                     <p className="font-medium text-foreground">Observaciones</p>
-                    <p className="mt-1 text-muted-foreground">{details.observations}</p>
+                    <p className="mt-1 text-muted-foreground">{details.finalObservations}</p>
                   </div>
 
                   <div className="flex items-center justify-between gap-3">
@@ -456,7 +522,84 @@ export function ReportsView({ user }: ReportsViewProps) {
         )}
       </main>
 
-      {selectedReport && <ReportDetail report={selectedReport} onClose={() => setSelectedReport(null)} />}
+      <Dialog open={isEditorOpen} onOpenChange={(open) => !open && resetEditor()}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{editingReportId ? "Editar reporte" : "Crear reporte"}</DialogTitle>
+            <DialogDescription>
+              {editorState.mode === "structured" ? "Edición rápida en ventana modal del reporte generado desde ronda." : "Registro manual de un reporte simple."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {editorState.mode === "structured" ? (
+              <>
+                <Input
+                  value={editorState.clientName}
+                  onChange={(event) => setEditorState((current) => ({ ...current, clientName: event.target.value }))}
+                  placeholder="Cliente"
+                />
+                <Input
+                  value={editorState.postName}
+                  onChange={(event) => setEditorState((current) => ({ ...current, postName: event.target.value }))}
+                  placeholder="Puesto"
+                />
+                <Input
+                  value={editorState.barrierStatus}
+                  onChange={(event) => setEditorState((current) => ({ ...current, barrierStatus: event.target.value }))}
+                  placeholder="Estado de barreras"
+                />
+                <Textarea
+                  value={editorState.vulnerabilities}
+                  onChange={(event) => setEditorState((current) => ({ ...current, vulnerabilities: event.target.value }))}
+                  placeholder="Vulnerabilidades"
+                  className="min-h-[100px]"
+                />
+                <Textarea
+                  value={editorState.finalObservations}
+                  onChange={(event) => setEditorState((current) => ({ ...current, finalObservations: event.target.value }))}
+                  placeholder="Observaciones finales"
+                  className="min-h-[120px]"
+                />
+              </>
+            ) : (
+              <>
+                <Input
+                  value={editorState.title}
+                  onChange={(event) => setEditorState((current) => ({ ...current, title: event.target.value }))}
+                  placeholder="Título del reporte"
+                />
+                <Input
+                  value={editorState.location}
+                  onChange={(event) => setEditorState((current) => ({ ...current, location: event.target.value }))}
+                  placeholder="Ubicación o puesto"
+                />
+                <Textarea
+                  value={editorState.description}
+                  onChange={(event) => setEditorState((current) => ({ ...current, description: event.target.value }))}
+                  placeholder="Descripción del reporte"
+                  className="min-h-[140px]"
+                />
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={resetEditor}>Cancelar</Button>
+            <Button onClick={handleSubmit} disabled={isSaving}>{isSaving ? "Guardando..." : "Guardar"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {selectedReport && (
+        <ReportDetail
+          key={selectedReport.id}
+          report={selectedReport}
+          user={user}
+          onClose={() => setSelectedReport(null)}
+          onReportUpdated={handleReportUpdated}
+        />
+      )}
     </div>
   )
 }

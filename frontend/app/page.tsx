@@ -121,7 +121,7 @@ export default function SJSeguridadApp() {
   if (currentView === "form") {
     return (
       <>
-        <RoundFormView onComplete={handleFormComplete} onCancel={handleFormCancel} />
+        <RoundFormView currentUser={user} onComplete={handleFormComplete} onCancel={handleFormCancel} />
         <Toaster position="top-center" richColors />
       </>
     )

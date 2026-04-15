@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { AuthRequest, requireRole } from '../middleware/auth';
 import { getClient, query } from '../database';
+import { canViewStructuredReport } from '../utils/report-structure';
 
 const router = express.Router();
 
@@ -66,18 +67,24 @@ router.post('/', requireRole('SUPERVISOR', 'SUPER_ADMIN'), async (req: AuthReque
 // Obtener rondas
 router.get('/', async (req: AuthRequest, res: Response) => {
   try {
-    let result;
+    const result = await query('SELECT id, titulo, descripcion, locacion, supervisor_id, fecha, created_at FROM rondas ORDER BY created_at DESC');
 
     if (req.user?.role === 'SUPER_ADMIN') {
-      result = await query('SELECT id, titulo, locacion, supervisor_id, fecha, created_at FROM rondas ORDER BY created_at DESC');
-    } else {
-      result = await query(
-        'SELECT id, titulo, locacion, supervisor_id, fecha, created_at FROM rondas WHERE supervisor_id = $1 ORDER BY created_at DESC',
-        [req.user?.id]
-      );
+      return res.json(result.rows);
     }
 
-    res.json(result.rows);
+    const filteredRows = result.rows.filter((row) => {
+      if (row.supervisor_id === req.user?.id) {
+        return true;
+      }
+
+      return canViewStructuredReport(row.descripcion || '', {
+        id: req.user!.id,
+        role: req.user!.role,
+      });
+    });
+
+    res.json(filteredRows);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch rounds' });
   }
