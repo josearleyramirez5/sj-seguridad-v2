@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ArrowLeft, ShieldCheck, UserPlus, UserX } from "lucide-react"
+import { AlertTriangle, ArrowLeft, ShieldCheck, Trash2, UserPlus, UserX } from "lucide-react"
 import { apiService, type User } from "@/lib/api.service"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -83,11 +83,13 @@ export function UsersManagementView({ currentUser, onBack }: UsersManagementView
       if (editingUserId) {
         const updated = await apiService.updateUser(editingUserId, {
           name: formData.name,
+          email: formData.email,
           backendRole: formData.backendRole,
           isActive: formData.isActive,
+          ...(formData.password.trim() ? { password: formData.password.trim() } : {}),
         })
 
-        setUsers((current) => current.map((user) => user.id === editingUserId ? { ...user, ...updated, email: user.email } : user))
+        setUsers((current) => current.map((user) => user.id === editingUserId ? { ...user, ...updated } : user))
         toast.success("Usuario actualizado")
       } else {
         const created = await apiService.createUser({
@@ -124,15 +126,40 @@ export function UsersManagementView({ currentUser, onBack }: UsersManagementView
       } else {
         const updated = await apiService.updateUser(user.id, {
           name: user.name,
+          email: user.email,
           backendRole: user.backendRole,
           isActive: true,
         })
-        setUsers((current) => current.map((item) => item.id === user.id ? { ...item, ...updated, email: item.email } : item))
+        setUsers((current) => current.map((item) => item.id === user.id ? { ...item, ...updated } : item))
         toast.success("Usuario reactivado")
       }
     } catch (error) {
       console.error("Error updating user status:", error)
       toast.error(error instanceof Error ? error.message : "No fue posible actualizar el estado del usuario")
+    }
+  }
+
+  const handleDelete = async (user: User) => {
+    if (user.id === currentUser?.id) {
+      toast.error("No puedes eliminar tu propia cuenta")
+      return
+    }
+
+    const confirmed = window.confirm(`Se eliminará definitivamente a ${user.name} y sus registros asociados. Esta acción no se puede deshacer.`)
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      await apiService.deleteUser(user.id)
+      setUsers((current) => current.filter((item) => item.id !== user.id))
+      if (editingUserId === user.id) {
+        resetForm()
+      }
+      toast.success("Usuario eliminado definitivamente")
+    } catch (error) {
+      console.error("Error deleting user:", error)
+      toast.error(error instanceof Error ? error.message : "No fue posible eliminar el usuario")
     }
   }
 
@@ -169,18 +196,29 @@ export function UsersManagementView({ currentUser, onBack }: UsersManagementView
             <CardTitle>{editingUserId ? "Editar usuario" : "Crear usuario"}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            {editingUserId && (
+              <div className="flex gap-3 rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>La eliminación ahora es definitiva. Usa desactivar si solo quieres bloquear el acceso temporalmente.</p>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="user-name">Nombre</Label>
               <Input id="user-name" value={formData.name} onChange={(event) => setFormData((current) => ({ ...current, name: event.target.value }))} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="user-email">Correo</Label>
-              <Input id="user-email" type="email" value={formData.email} onChange={(event) => setFormData((current) => ({ ...current, email: event.target.value.toLowerCase() }))} disabled={Boolean(editingUserId)} />
+              <Input id="user-email" type="email" value={formData.email} onChange={(event) => setFormData((current) => ({ ...current, email: event.target.value.toLowerCase() }))} />
             </div>
-            {!editingUserId && (
+            {!editingUserId ? (
               <div className="space-y-2">
                 <Label htmlFor="user-password">Contraseña temporal</Label>
                 <Input id="user-password" type="password" value={formData.password} onChange={(event) => setFormData((current) => ({ ...current, password: event.target.value }))} />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="user-password">Nueva contraseña</Label>
+                <Input id="user-password" type="password" value={formData.password} onChange={(event) => setFormData((current) => ({ ...current, password: event.target.value }))} placeholder="Déjala vacía si no quieres cambiarla" />
               </div>
             )}
             <div className="space-y-2">
@@ -239,6 +277,9 @@ export function UsersManagementView({ currentUser, onBack }: UsersManagementView
                   <Button size="sm" variant="outline" onClick={() => handleEdit(user)}>Editar</Button>
                   <Button size="sm" variant={user.isActive ? "destructive" : "secondary"} onClick={() => handleDeactivate(user)}>
                     <UserX className="mr-1 h-4 w-4" /> {user.isActive ? "Desactivar" : "Reactivar"}
+                  </Button>
+                  <Button size="sm" variant="outline" className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDelete(user)}>
+                    <Trash2 className="mr-1 h-4 w-4" /> Eliminar
                   </Button>
                 </div>
               </div>

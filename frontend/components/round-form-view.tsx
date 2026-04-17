@@ -1,33 +1,37 @@
 "use client"
 
 import { useEffect, useState, type ChangeEvent } from "react"
-import { 
-  ArrowLeft, 
-  ArrowRight, 
-  MapPin, 
-  User, 
-  FileCheck, 
-  Shield, 
-  Building, 
-  Camera,
-  Star,
+import {
+  ArrowLeft,
+  ArrowRight,
+  Building,
   CheckCircle2,
+  FileCheck,
+  MapPin,
+  RefreshCw,
+  Shield,
+  Star,
+  User,
   X,
-  RefreshCw
 } from "lucide-react"
 import { useGPS } from "@/hooks/use-gps"
 import { apiService, type User as AppUser } from "@/lib/api.service"
-import { buildReportDescription, type StructuredPhoto } from "@/lib/report-structure"
+import {
+  buildReportDescription,
+  type BinaryOption,
+  type ConditionOption,
+  type ServiceType,
+  type StructuredEquipmentState,
+  type StructuredPhoto,
+} from "@/lib/report-structure"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "sonner"
 
 interface RoundFormViewProps {
@@ -36,80 +40,139 @@ interface RoundFormViewProps {
   currentUser: AppUser | null
 }
 
+interface EquipmentFormItem {
+  availability: BinaryOption
+  condition: ConditionOption
+  notes: string
+  photo: StructuredPhoto | null
+}
+
+interface DocumentFormItem {
+  compliant: boolean
+  notes: string
+  photo: StructuredPhoto | null
+}
+
 interface FormData {
-  // Context
   supervisor: string
   supervisorName: string
   clientName: string
   postName: string
-  // Step 1: Guard identification
+  serviceType: ServiceType
   guardUserId: string
   guardName: string
   guardId: string
+  onDutyGuardName: string
+  shiftConditionNote: string
   documentationOk: boolean
+  guardCardOk: boolean
+  accreditationOk: boolean
   personalRating: number
-  // Step 2: Equipment
+  personalPresentationNote: string
+  monitoringVisitNote: string
+  monitoringPhoto: StructuredPhoto | null
   equipment: {
-    armament: { checked: boolean; details: string }
-    box: { checked: boolean; details: string }
-    radios: { checked: boolean; details: string }
-    garrett: { checked: boolean; details: string }
-    canine: { checked: boolean; details: string }
+    armament: EquipmentFormItem
+    box: EquipmentFormItem
+    radios: EquipmentFormItem
+    garrett: EquipmentFormItem
+    canine: EquipmentFormItem
   }
-  // Step 3: Facilities
   barrierStatus: string
   vulnerabilities: string
-  photos: StructuredPhoto[]
-  // Step 4: Documentation
+  installationPhoto: StructuredPhoto | null
   documents: {
-    generalInstructions: boolean
-    particularInstructions: boolean
-    protocols: boolean
-    manuals: boolean
+    generalInstructions: DocumentFormItem
+    particularInstructions: DocumentFormItem
+    protocols: DocumentFormItem
+    manuals: DocumentFormItem
   }
-  // Step 5: Final
+  novelties: string
+  suggestions: string
   finalObservations: string
 }
+
+const steps = [
+  { id: 1, title: "General", icon: User },
+  { id: 2, title: "Personal", icon: Star },
+  { id: 3, title: "Elementos", icon: Shield },
+  { id: 4, title: "Instalaciones", icon: Building },
+  { id: 5, title: "Documentos", icon: FileCheck },
+  { id: 6, title: "Cierre", icon: CheckCircle2 },
+]
+
+const MAX_IMAGE_DIMENSION = 1600
+const IMAGE_QUALITY = 0.72
+
+const createEquipmentItem = (
+  availability: BinaryOption = "na",
+  condition: ConditionOption = "na",
+): EquipmentFormItem => ({
+  availability,
+  condition,
+  notes: "",
+  photo: null,
+})
+
+const createDocumentItem = (): DocumentFormItem => ({
+  compliant: false,
+  notes: "",
+  photo: null,
+})
 
 const initialFormData: FormData = {
   supervisor: "",
   supervisorName: "",
   clientName: "",
   postName: "",
+  serviceType: "SEGURIDAD_FISICA",
   guardUserId: "",
   guardName: "",
   guardId: "",
+  onDutyGuardName: "",
+  shiftConditionNote: "",
   documentationOk: false,
+  guardCardOk: false,
+  accreditationOk: false,
   personalRating: 0,
+  personalPresentationNote: "",
+  monitoringVisitNote: "",
+  monitoringPhoto: null,
   equipment: {
-    armament: { checked: false, details: "" },
-    box: { checked: false, details: "" },
-    radios: { checked: false, details: "" },
-    garrett: { checked: false, details: "" },
-    canine: { checked: false, details: "" },
+    armament: createEquipmentItem("no", "na"),
+    box: createEquipmentItem("si", "bueno"),
+    radios: createEquipmentItem("no", "na"),
+    garrett: createEquipmentItem("no", "na"),
+    canine: createEquipmentItem("no", "na"),
   },
   barrierStatus: "",
   vulnerabilities: "",
-  photos: [],
+  installationPhoto: null,
   documents: {
-    generalInstructions: false,
-    particularInstructions: false,
-    protocols: false,
-    manuals: false,
+    generalInstructions: createDocumentItem(),
+    particularInstructions: createDocumentItem(),
+    protocols: createDocumentItem(),
+    manuals: createDocumentItem(),
   },
+  novelties: "",
+  suggestions: "",
   finalObservations: "",
 }
 
-const steps = [
-  { id: 1, title: "Identificación", icon: User },
-  { id: 2, title: "Dotación", icon: Shield },
-  { id: 3, title: "Instalaciones", icon: Building },
-  { id: 4, title: "Documentación", icon: FileCheck },
-  { id: 5, title: "Finalizar", icon: CheckCircle2 },
+const equipmentDefinitions = [
+  { key: "armament" as const, label: "Armamento", mode: "availability" as const },
+  { key: "box" as const, label: "Cajilla", mode: "condition" as const },
+  { key: "radios" as const, label: "Medios de comunicación", mode: "availability-condition" as const },
+  { key: "garrett" as const, label: "Garrett", mode: "availability-condition" as const },
+  { key: "canine" as const, label: "Caninos", mode: "availability-condition" as const },
 ]
 
-const MAX_IMAGE_DIMENSION = 1600
-const IMAGE_QUALITY = 0.72
+const documentDefinitions = [
+  { key: "generalInstructions" as const, label: "Consignas generales" },
+  { key: "particularInstructions" as const, label: "Consignas particulares" },
+  { key: "protocols" as const, label: "Protocolos" },
+  { key: "manuals" as const, label: "Instructivos y manuales" },
+]
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -158,6 +221,53 @@ async function toCompressedPhoto(file: File): Promise<StructuredPhoto> {
   }
 }
 
+function PhotoField({
+  id,
+  label,
+  photo,
+  onFileSelected,
+  onRemove,
+}: {
+  id: string
+  label: string
+  photo: StructuredPhoto | null
+  onFileSelected: (file: File) => Promise<void>
+  onRemove: () => void
+}) {
+  const handleChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+
+    await onFileSelected(file)
+    event.target.value = ""
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Input id={id} type="file" accept="image/*" capture="environment" onChange={handleChange} />
+      {photo && (
+        <div className="overflow-hidden rounded-xl border bg-muted/30">
+          <div className="relative aspect-video">
+            <img src={photo.dataUrl} alt={photo.name || label} className="h-full w-full object-cover" />
+            <button
+              type="button"
+              onClick={onRemove}
+              className="absolute right-2 top-2 rounded-full bg-destructive p-1 text-destructive-foreground"
+              aria-label={`Eliminar foto de ${label}`}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="px-3 py-2 text-xs text-muted-foreground">{photo.name}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormViewProps) {
   const [currentStep, setCurrentStep] = useState(0)
   const [formData, setFormData] = useState<FormData>(initialFormData)
@@ -165,8 +275,7 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
   const [supervisors, setSupervisors] = useState<AppUser[]>([])
   const [guards, setGuards] = useState<AppUser[]>([])
   const [isLoadingUsers, setIsLoadingUsers] = useState(true)
-  
-  // Use real GPS hook
+
   const { status: gpsStatus, coordinates: gpsCoords, captureLocation, error: gpsError } = useGPS()
 
   useEffect(() => {
@@ -202,18 +311,89 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
     void loadUsers()
   }, [currentUser])
 
-  const progress = ((currentStep + 1) / (steps.length + 1)) * 100
+  const progress = ((currentStep + 1) / steps.length) * 100
 
-  const handleNext = () => {
-    if (currentStep < steps.length) {
-      setCurrentStep(currentStep + 1)
+  const updateEquipment = (key: keyof FormData["equipment"], patch: Partial<EquipmentFormItem>) => {
+    setFormData((current) => ({
+      ...current,
+      equipment: {
+        ...current.equipment,
+        [key]: {
+          ...current.equipment[key],
+          ...patch,
+        },
+      },
+    }))
+  }
+
+  const updateDocument = (key: keyof FormData["documents"], patch: Partial<DocumentFormItem>) => {
+    setFormData((current) => ({
+      ...current,
+      documents: {
+        ...current.documents,
+        [key]: {
+          ...current.documents[key],
+          ...patch,
+        },
+      },
+    }))
+  }
+
+  const handleSinglePhotoUpload = async (file: File, onPhotoReady: (photo: StructuredPhoto) => void) => {
+    try {
+      const photo = await toCompressedPhoto(file)
+      onPhotoReady(photo)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No fue posible adjuntar la foto")
     }
   }
 
-  const handleBack = () => {
-    if (currentStep > 0) {
-      setCurrentStep(currentStep - 1)
+  const collectEvidencePhotos = () => {
+    const photos: StructuredPhoto[] = []
+    const pushPhoto = (photo: StructuredPhoto | null, name: string) => {
+      if (!photo) {
+        return
+      }
+
+      photos.push({
+        name: photo.name || name,
+        dataUrl: photo.dataUrl,
+      })
     }
+
+    pushPhoto(formData.monitoringPhoto, "monitoreo")
+    pushPhoto(formData.installationPhoto, "instalaciones")
+
+    Object.entries(formData.equipment).forEach(([key, value]) => {
+      pushPhoto(value.photo, key)
+    })
+
+    Object.entries(formData.documents).forEach(([key, value]) => {
+      pushPhoto(value.photo, key)
+    })
+
+    return photos
+  }
+
+  const calculateAlertCount = () => {
+    const equipmentAlerts = Object.values(formData.equipment).filter((item) => {
+      if (item.availability === "no") {
+        return true
+      }
+
+      return item.availability === "si" && item.condition !== "bueno" && item.condition !== "na"
+    }).length
+
+    const documentAlerts = Object.values(formData.documents).filter((item) => !item.compliant).length
+    const guardAlerts = [
+      !formData.documentationOk,
+      formData.serviceType === "SEGURIDAD_FISICA" && !formData.guardCardOk,
+      formData.serviceType === "SEGURIDAD_FISICA" && !formData.accreditationOk,
+      formData.serviceType === "SEGURIDAD_FISICA" && formData.personalRating > 0 && formData.personalRating < 4,
+      formData.vulnerabilities.trim().length > 0 && formData.vulnerabilities.trim().toLowerCase() !== "ninguna",
+    ].filter(Boolean).length
+
+    return equipmentAlerts + documentAlerts + guardAlerts
   }
 
   const handleSubmit = async () => {
@@ -224,25 +404,64 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
 
     const supervisorRequired = currentUser.role === "admin" ? !formData.supervisor : false
 
-    if (!formData.clientName || !formData.postName || !formData.guardUserId || !formData.guardName || !formData.guardId || supervisorRequired) {
-      toast.error("Completa cliente, puesto, supervisor y datos del guarda antes de finalizar")
+    if (!formData.clientName.trim() || !formData.postName.trim() || !formData.guardUserId || !formData.guardName.trim() || !formData.guardId.trim() || !formData.onDutyGuardName.trim() || supervisorRequired) {
+      toast.error("Completa cliente, puesto, supervisor, guarda asignado, guarda de turno y cédula antes de finalizar")
+      return
+    }
+
+    if (formData.serviceType === "MONITOREO" && !formData.monitoringVisitNote.trim()) {
+      toast.error("Para monitoreo debes redactar el detalle breve de la visita")
       return
     }
 
     setIsSubmitting(true)
-    
-    // Calculate alert count based on equipment issues and vulnerabilities
-    const equipmentIssues = Object.values(formData.equipment).filter(e => !e.checked).length
-    const hasVulnerabilities = formData.vulnerabilities.trim().length > 0
-    const alertCount = equipmentIssues + (hasVulnerabilities ? 1 : 0)
+
     const selectedSupervisor = supervisors.find((item) => item.id === formData.supervisor)
       || (currentUser.role === "supervisor" ? currentUser : null)
     const selectedGuard = guards.find((item) => item.id === formData.guardUserId)
-    
-    const title = `${formData.clientName} - ${formData.postName}`
-    const location = `${formData.clientName} / ${formData.postName}`
+    const alertCount = calculateAlertCount()
+
+    const normalizedEquipment = Object.fromEntries(
+      Object.entries(formData.equipment).map(([key, value]) => {
+        const checked = value.availability === "si" && (value.condition === "bueno" || value.condition === "na")
+        const details = [
+          value.availability !== "na" ? `Disponibilidad: ${value.availability.toUpperCase()}` : "",
+          value.condition !== "na" ? `Estado: ${value.condition}` : "",
+          value.notes.trim(),
+        ].filter(Boolean).join(" | ")
+
+        return [
+          key,
+          {
+            checked,
+            details,
+            availability: value.availability,
+            condition: value.condition,
+            photo: value.photo,
+          } satisfies StructuredEquipmentState,
+        ]
+      }),
+    ) as Record<string, StructuredEquipmentState>
+
+    const documentFlags = Object.fromEntries(
+      Object.entries(formData.documents).map(([key, value]) => [key, value.compliant]),
+    ) as Record<string, boolean>
+
+    const documentEvidence = Object.fromEntries(
+      Object.entries(formData.documents).map(([key, value]) => [
+        key,
+        {
+          status: value.compliant ? "cumple" : "no_cumple",
+          note: value.notes.trim(),
+          photo: value.photo,
+        },
+      ]),
+    )
+
+    const title = `${formData.clientName.trim()} - ${formData.postName.trim()}`
+    const location = `${formData.clientName.trim()} / ${formData.postName.trim()}`
     const description = buildReportDescription({
-      version: 2,
+      version: 3,
       clientName: formData.clientName.trim(),
       postName: formData.postName.trim(),
       assignedSupervisor: selectedSupervisor ? {
@@ -257,19 +476,36 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
         email: currentUser.email,
         role: currentUser.backendRole,
       },
+      serviceType: formData.serviceType,
+      shift: {
+        assignedGuardName: formData.guardName.trim(),
+        onDutyGuardName: formData.onDutyGuardName.trim(),
+        conditionNote: formData.shiftConditionNote.trim(),
+        monitoringVisitNote: formData.serviceType === "MONITOREO" ? formData.monitoringVisitNote.trim() : "",
+        monitoringPhoto: formData.serviceType === "MONITOREO" ? formData.monitoringPhoto : null,
+      },
       guard: {
         userId: formData.guardUserId,
-        name: formData.guardName,
+        name: formData.guardName.trim(),
         email: selectedGuard?.email,
-        cedula: formData.guardId,
+        cedula: formData.guardId.trim(),
         documentationOk: formData.documentationOk,
         personalRating: formData.personalRating,
+        guardCardOk: formData.serviceType === "SEGURIDAD_FISICA" ? formData.guardCardOk : undefined,
+        accreditationOk: formData.serviceType === "SEGURIDAD_FISICA" ? formData.accreditationOk : undefined,
+        personalPresentationNote: formData.personalPresentationNote.trim(),
       },
-      equipment: formData.equipment,
+      equipment: normalizedEquipment,
       barrierStatus: formData.barrierStatus || "sin_registro",
       vulnerabilities: formData.vulnerabilities.trim() || "ninguna",
-      photos: formData.photos,
-      documents: formData.documents,
+      installationPhoto: formData.installationPhoto,
+      photos: collectEvidencePhotos(),
+      documents: documentFlags,
+      documentEvidence,
+      securityNotes: {
+        novelties: formData.novelties.trim(),
+        suggestions: formData.suggestions.trim(),
+      },
       finalObservations: formData.finalObservations.trim() || "Sin observaciones adicionales.",
       gps: gpsCoords,
       alertCount,
@@ -283,82 +519,49 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
         scheduledAt: new Date().toISOString(),
       })
 
-      setIsSubmitting(false)
       onComplete()
     } catch (error) {
       console.error("Error creating inspection:", error)
-      setIsSubmitting(false)
       toast.error(error instanceof Error ? error.message : "No fue posible guardar la ronda")
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
-  const handlePhotoUpload = async (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (files && files.length > 0) {
-      try {
-        const remainingSlots = Math.max(0, 3 - formData.photos.length)
-        const selectedFiles = Array.from(files).slice(0, remainingSlots)
-        const encodedPhotos = await Promise.all(selectedFiles.map((file) => toCompressedPhoto(file)))
+  const renderStarRating = () => (
+    <div className="flex gap-2">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          onClick={() => setFormData((current) => ({ ...current, personalRating: star }))}
+          className="p-1 touch-manipulation"
+        >
+          <Star className={`h-8 w-8 transition-colors ${star <= formData.personalRating ? "fill-warning text-warning" : "text-muted-foreground"}`} />
+        </button>
+      ))}
+    </div>
+  )
 
-        setFormData((current) => ({
-          ...current,
-          photos: [...current.photos, ...encodedPhotos],
-        }))
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "No fue posible adjuntar las fotos")
-      }
-
-      e.target.value = ""
-    }
-  }
-
-  const removePhoto = (index: number) => {
-    const newPhotos = formData.photos.filter((_, i) => i !== index)
-    setFormData({ ...formData, photos: newPhotos })
-  }
-
-  const renderStarRating = () => {
-    return (
-      <div className="flex gap-2">
-        {[1, 2, 3, 4, 5].map((star) => (
-          <button
-            key={star}
-            type="button"
-            onClick={() => setFormData({ ...formData, personalRating: star })}
-            className="p-1 touch-manipulation"
-          >
-            <Star
-              className={`h-8 w-8 transition-colors ${
-                star <= formData.personalRating
-                  ? "fill-warning text-warning"
-                  : "text-muted-foreground"
-              }`}
-            />
-          </button>
-        ))}
-      </div>
-    )
-  }
-
-  const renderContextSection = () => (
+  const renderStep0 = () => (
     <Card className="border-0 shadow-md">
       <CardHeader>
-        <CardTitle className="text-lg">Contexto General</CardTitle>
-        <CardDescription>Información básica de la ronda</CardDescription>
+        <CardTitle className="text-lg">Contexto general del servicio</CardTitle>
+        <CardDescription>Cliente, puesto, tipo de servicio y responsables del turno.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="supervisor">Seleccionar Supervisor</Label>
+          <Label htmlFor="supervisor">Supervisor responsable</Label>
           {currentUser?.role === "admin" ? (
-            <Select 
-              value={formData.supervisor} 
+            <Select
+              value={formData.supervisor}
               onValueChange={(value) => {
                 const selected = supervisors.find((item) => item.id === value)
-                setFormData({
-                  ...formData,
+                setFormData((current) => ({
+                  ...current,
                   supervisor: value,
                   supervisorName: selected?.name || "",
-                })
+                }))
               }}
             >
               <SelectTrigger className="h-12">
@@ -374,50 +577,42 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
             <Input value={formData.supervisorName || currentUser?.name || ""} disabled className="h-12" />
           )}
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="clientName">Razón Social del Cliente</Label>
-          <Input
-            id="clientName"
-            placeholder="Nombre del cliente"
-            value={formData.clientName}
-            onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
-            className="h-12"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="postName">Nombre del Puesto</Label>
-          <Input
-            id="postName"
-            placeholder="Ubicación o puesto"
-            value={formData.postName}
-            onChange={(e) => setFormData({ ...formData, postName: e.target.value })}
-            className="h-12"
-          />
-        </div>
-      </CardContent>
-    </Card>
-  )
 
-  const renderStep1 = () => (
-    <Card className="border-0 shadow-md">
-      <CardHeader>
-        <CardTitle className="text-lg flex items-center gap-2">
-          <User className="h-5 w-5 text-primary" />
-          Identificación y Revista Guarda
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-5">
         <div className="space-y-2">
-          <Label htmlFor="guardName">Guarda asignado</Label>
+          <Label htmlFor="clientName">Razón social</Label>
+          <Input id="clientName" value={formData.clientName} onChange={(event) => setFormData((current) => ({ ...current, clientName: event.target.value }))} placeholder="Nombre del cliente" className="h-12" />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="postName">Puesto o ubicación</Label>
+          <Input id="postName" value={formData.postName} onChange={(event) => setFormData((current) => ({ ...current, postName: event.target.value }))} placeholder="Ubicación o puesto" className="h-12" />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Tipo de servicio</Label>
+          <Select value={formData.serviceType} onValueChange={(value: ServiceType) => setFormData((current) => ({ ...current, serviceType: value }))}>
+            <SelectTrigger className="h-12">
+              <SelectValue placeholder="Seleccione el tipo de servicio" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="MONITOREO">Monitoreo</SelectItem>
+              <SelectItem value="SEGURIDAD_FISICA">Seguridad física</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Guarda asignado</Label>
           <Select
             value={formData.guardUserId}
             onValueChange={(value) => {
               const selected = guards.find((item) => item.id === value)
-              setFormData({
-                ...formData,
+              setFormData((current) => ({
+                ...current,
                 guardUserId: value,
                 guardName: selected?.name || "",
-              })
+                onDutyGuardName: current.onDutyGuardName || selected?.name || "",
+              }))
             }}
           >
             <SelectTrigger className="h-12">
@@ -429,118 +624,176 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
               ))}
             </SelectContent>
           </Select>
-          {formData.guardUserId && (
-            <p className="text-sm text-muted-foreground">
-              {guards.find((item) => item.id === formData.guardUserId)?.email}
-            </p>
-          )}
+          {formData.guardUserId && <p className="text-sm text-muted-foreground">{guards.find((item) => item.id === formData.guardUserId)?.email}</p>}
         </div>
+
         <div className="space-y-2">
-          <Label htmlFor="guardId">Cédula del Guarda</Label>
-          <Input
-            id="guardId"
-            placeholder="Número de identificación"
-            value={formData.guardId}
-            onChange={(e) => setFormData({ ...formData, guardId: e.target.value })}
-            className="h-12"
-          />
+          <Label htmlFor="onDutyGuardName">Guarda de turno</Label>
+          <Input id="onDutyGuardName" value={formData.onDutyGuardName} onChange={(event) => setFormData((current) => ({ ...current, onDutyGuardName: event.target.value }))} placeholder="Nombre del guarda en turno" className="h-12" />
         </div>
-        <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-          <Label htmlFor="documentation" className="text-base font-medium cursor-pointer">
-            Documentación al día
-          </Label>
-          <Switch
-            id="documentation"
-            checked={formData.documentationOk}
-            onCheckedChange={(checked) => setFormData({ ...formData, documentationOk: checked })}
-          />
-        </div>
-        <div className="space-y-3">
-          <Label>Presentación Personal</Label>
-          {renderStarRating()}
+
+        <div className="space-y-2">
+          <Label htmlFor="shiftCondition">Condición del turno</Label>
+          <Textarea id="shiftCondition" value={formData.shiftConditionNote} onChange={(event) => setFormData((current) => ({ ...current, shiftConditionNote: event.target.value }))} placeholder="Observación breve sobre el turno, cobertura o servicio" className="min-h-[100px]" />
         </div>
       </CardContent>
     </Card>
   )
 
-  const renderStep2 = () => {
-    const equipmentItems = [
-      { key: "armament" as const, label: "Armamento" },
-      { key: "box" as const, label: "Cajilla" },
-      { key: "radios" as const, label: "Radios" },
-      { key: "garrett" as const, label: "Garrett (Detector de metal)" },
-      { key: "canine" as const, label: "Caninos" },
-    ]
+  const renderStep1 = () => (
+    <Card className="border-0 shadow-md">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2"><User className="h-5 w-5 text-primary" /> Personal y condiciones del servicio</CardTitle>
+        <CardDescription>Datos del guarda y captura condicional según el tipo de servicio.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="space-y-2">
+          <Label htmlFor="guardId">Cédula del guarda</Label>
+          <Input id="guardId" value={formData.guardId} onChange={(event) => setFormData((current) => ({ ...current, guardId: event.target.value }))} placeholder="Número de identificación" className="h-12" />
+        </div>
 
-    return (
-      <Card className="border-0 shadow-md">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Shield className="h-5 w-5 text-primary" />
-            Dotación y Elementos del Servicio
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {equipmentItems.map((item) => (
-            <div key={item.key} className="space-y-2">
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                <Label htmlFor={item.key} className="text-base font-medium cursor-pointer">
-                  {item.label}
-                </Label>
-                <Switch
-                  id={item.key}
-                  checked={formData.equipment[item.key].checked}
-                  onCheckedChange={(checked) =>
-                    setFormData({
-                      ...formData,
-                      equipment: {
-                        ...formData.equipment,
-                        [item.key]: { ...formData.equipment[item.key], checked },
-                      },
-                    })
-                  }
-                />
-              </div>
-              {!formData.equipment[item.key].checked && (
-                <Textarea
-                  placeholder="Detalles del problema..."
-                  value={formData.equipment[item.key].details}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      equipment: {
-                        ...formData.equipment,
-                        [item.key]: { ...formData.equipment[item.key], details: e.target.value },
-                      },
-                    })
-                  }
-                  className="min-h-[80px]"
-                />
-              )}
+        <div className="space-y-2">
+          <Label>Documentación al día</Label>
+          <Select value={formData.documentationOk ? "si" : "no"} onValueChange={(value) => setFormData((current) => ({ ...current, documentationOk: value === "si" }))}>
+            <SelectTrigger className="h-12"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="si">Sí</SelectItem>
+              <SelectItem value="no">No</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {formData.serviceType === "SEGURIDAD_FISICA" ? (
+          <>
+            <div className="space-y-2">
+              <Label>Carné del guarda</Label>
+              <Select value={formData.guardCardOk ? "si" : "no"} onValueChange={(value) => setFormData((current) => ({ ...current, guardCardOk: value === "si" }))}>
+                <SelectTrigger className="h-12"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="si">Sí</SelectItem>
+                  <SelectItem value="no">No</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          ))}
-        </CardContent>
-      </Card>
-    )
-  }
+
+            <div className="space-y-2">
+              <Label>Acreditación vigente</Label>
+              <Select value={formData.accreditationOk ? "si" : "no"} onValueChange={(value) => setFormData((current) => ({ ...current, accreditationOk: value === "si" }))}>
+                <SelectTrigger className="h-12"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="si">Sí</SelectItem>
+                  <SelectItem value="no">No</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-3">
+              <Label>Presentación personal</Label>
+              {renderStarRating()}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="presentationNote">Descripción de presentación personal</Label>
+              <Textarea id="presentationNote" value={formData.personalPresentationNote} onChange={(event) => setFormData((current) => ({ ...current, personalPresentationNote: event.target.value }))} placeholder="Describe por qué la presentación es correcta o por qué se calificó con pocas estrellas" className="min-h-[100px]" />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="monitoringVisitNote">Detalle breve de la visita de monitoreo</Label>
+              <Textarea id="monitoringVisitNote" value={formData.monitoringVisitNote} onChange={(event) => setFormData((current) => ({ ...current, monitoringVisitNote: event.target.value }))} placeholder="Redacte un breve detalle de la visita realizada" className="min-h-[140px]" />
+            </div>
+
+            <PhotoField
+              id="monitoring-photo"
+              label="Imagen de soporte del monitoreo"
+              photo={formData.monitoringPhoto}
+              onFileSelected={async (file) => handleSinglePhotoUpload(file, (photo) => setFormData((current) => ({ ...current, monitoringPhoto: photo })))}
+              onRemove={() => setFormData((current) => ({ ...current, monitoringPhoto: null }))}
+            />
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+
+  const renderStep2 = () => (
+    <Card className="border-0 shadow-md">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2"><Shield className="h-5 w-5 text-primary" /> Dotación y elementos del servicio</CardTitle>
+        <CardDescription>Un solo soporte fotográfico por elemento.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {equipmentDefinitions.map((item) => {
+          const currentItem = formData.equipment[item.key]
+          const showCondition = item.mode === "condition" || (item.mode === "availability-condition" && currentItem.availability === "si")
+
+          return (
+            <div key={item.key} className="space-y-3 rounded-xl border border-border p-4">
+              <div>
+                <p className="font-semibold text-foreground">{item.label}</p>
+                <p className="text-sm text-muted-foreground">Registra disponibilidad, estado, observación y una foto.</p>
+              </div>
+
+              {item.mode !== "condition" && (
+                <div className="space-y-2">
+                  <Label>¿Sí o no?</Label>
+                  <Select value={currentItem.availability} onValueChange={(value: BinaryOption) => updateEquipment(item.key, {
+                    availability: value,
+                    condition: value === "si" ? (currentItem.condition === "na" ? "bueno" : currentItem.condition) : "na",
+                  })}>
+                    <SelectTrigger className="h-12"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="si">Sí</SelectItem>
+                      <SelectItem value="no">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {showCondition && (
+                <div className="space-y-2">
+                  <Label>Estado</Label>
+                  <Select value={currentItem.condition} onValueChange={(value: ConditionOption) => updateEquipment(item.key, { condition: value })}>
+                    <SelectTrigger className="h-12"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bueno">Bueno</SelectItem>
+                      <SelectItem value="regular">Regular</SelectItem>
+                      <SelectItem value="malo">Malo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor={`${item.key}-notes`}>Observación</Label>
+                <Textarea id={`${item.key}-notes`} value={currentItem.notes} onChange={(event) => updateEquipment(item.key, { notes: event.target.value })} placeholder="Detalle breve del elemento inspeccionado" className="min-h-[90px]" />
+              </div>
+
+              <PhotoField
+                id={`${item.key}-photo`}
+                label={`Foto de ${item.label.toLowerCase()}`}
+                photo={currentItem.photo}
+                onFileSelected={async (file) => handleSinglePhotoUpload(file, (photo) => updateEquipment(item.key, { photo }))}
+                onRemove={() => updateEquipment(item.key, { photo: null })}
+              />
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
 
   const renderStep3 = () => (
     <Card className="border-0 shadow-md">
       <CardHeader>
-        <CardTitle className="text-lg flex items-center gap-2">
-          <Building className="h-5 w-5 text-primary" />
-          Instalaciones y Vulnerabilidades
-        </CardTitle>
-        <CardDescription className="text-destructive font-medium">Paso Crítico</CardDescription>
+        <CardTitle className="text-lg flex items-center gap-2"><Building className="h-5 w-5 text-primary" /> Instalaciones y vulnerabilidades</CardTitle>
+        <CardDescription>Sección crítica del servicio.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        {/* Barrier Status Select */}
         <div className="space-y-2">
-          <Label>Estado de Barreras Perimetrales</Label>
-          <Select 
-            value={formData.barrierStatus} 
-            onValueChange={(value) => setFormData({ ...formData, barrierStatus: value })}
-          >
+          <Label>Estado de instalaciones y barreras</Label>
+          <Select value={formData.barrierStatus} onValueChange={(value) => setFormData((current) => ({ ...current, barrierStatus: value }))}>
             <SelectTrigger className="h-12">
               <SelectValue placeholder="Seleccione estado" />
             </SelectTrigger>
@@ -552,204 +805,107 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
           </Select>
         </div>
 
-        {/* Vulnerabilities Textarea */}
         <div className="space-y-2">
-          <Label htmlFor="vulnerabilities">Descripción de Riesgos/Vulnerabilidades</Label>
-          <Textarea
-            id="vulnerabilities"
-            placeholder="Describa detalladamente los riesgos o vulnerabilidades identificadas..."
-            value={formData.vulnerabilities}
-            onChange={(e) => setFormData({ ...formData, vulnerabilities: e.target.value })}
-            className="min-h-[120px]"
-          />
+          <Label htmlFor="vulnerabilities">Riesgos, vulnerabilidades o hallazgos</Label>
+          <Textarea id="vulnerabilities" value={formData.vulnerabilities} onChange={(event) => setFormData((current) => ({ ...current, vulnerabilities: event.target.value }))} placeholder="Describa riesgos, puntos ciegos, fallas o debilidades encontradas" className="min-h-[140px]" />
         </div>
 
-        {/* Dynamic Photo Upload Section */}
-        <div className="space-y-4">
-          {/* Upload Button - Prominent dashed border with camera icon */}
-          <button
-            type="button"
-            onClick={() => document.getElementById("photo-upload")?.click()}
-            disabled={formData.photos.length >= 3}
-            className={`w-full border-2 border-dashed rounded-xl p-6 text-center transition-all touch-manipulation ${
-              formData.photos.length >= 3
-                ? "border-muted-foreground/20 bg-muted/30 cursor-not-allowed"
-                : "border-primary/40 bg-primary/5 hover:border-primary hover:bg-primary/10 active:scale-[0.98]"
-            }`}
-          >
-            <input
-              id="photo-upload"
-              type="file"
-              accept="image/*"
-              multiple
-              capture="environment"
-              className="hidden"
-              onChange={handlePhotoUpload}
-              disabled={formData.photos.length >= 3}
-            />
-            <div className="flex flex-col items-center gap-3">
-              <div className={`p-4 rounded-full ${
-                formData.photos.length >= 3 ? "bg-muted" : "bg-primary/10"
-              }`}>
-                <Camera className={`h-8 w-8 ${
-                  formData.photos.length >= 3 ? "text-muted-foreground" : "text-primary"
-                }`} />
-              </div>
-              <div>
-                <p className={`font-medium ${
-                  formData.photos.length >= 3 ? "text-muted-foreground" : "text-foreground"
-                }`}>
-                  {formData.photos.length >= 3 
-                    ? "Máximo de fotos alcanzado" 
-                    : "Añadir Evidencia Fotográfica"}
-                </p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {formData.photos.length >= 3 
-                    ? "Elimine una foto para agregar otra"
-                    : "(Opcional) Toca para capturar o seleccionar"}
-                </p>
-              </div>
-            </div>
-          </button>
-
-          {/* Dynamic Preview Grid - Only shown when images are selected */}
-          {formData.photos.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">
-                  Fotos Adjuntas ({formData.photos.length}/3)
-                </Label>
-                {formData.photos.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, photos: [] })}
-                    className="text-xs text-destructive hover:underline"
-                  >
-                    Eliminar todas
-                  </button>
-                )}
-              </div>
-              
-              {/* 2-column grid on mobile */}
-              <div className="grid grid-cols-2 gap-3">
-                {formData.photos.map((photo, index) => (
-                  <div 
-                    key={index} 
-                    className="relative aspect-square rounded-lg overflow-hidden bg-muted border border-border group"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={photo.dataUrl}
-                      alt={`Evidencia ${index + 1}`}
-                      className="w-full h-full object-cover"
-                    />
-                    {/* Overlay with file info */}
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2">
-                      <p className="text-xs text-white truncate">
-                        {photo.name}
-                      </p>
-                    </div>
-                    {/* Remove button */}
-                    <button
-                      type="button"
-                      onClick={() => removePhoto(index)}
-                      className="absolute top-2 right-2 bg-destructive text-destructive-foreground rounded-full p-1.5 shadow-lg hover:bg-destructive/90 transition-colors"
-                      aria-label={`Eliminar foto ${index + 1}`}
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <PhotoField
+          id="installation-photo"
+          label="Foto de instalaciones o vulnerabilidad"
+          photo={formData.installationPhoto}
+          onFileSelected={async (file) => handleSinglePhotoUpload(file, (photo) => setFormData((current) => ({ ...current, installationPhoto: photo })))}
+          onRemove={() => setFormData((current) => ({ ...current, installationPhoto: null }))}
+        />
       </CardContent>
     </Card>
   )
 
-  const renderStep4 = () => {
-    const documentItems = [
-      { key: "generalInstructions" as const, label: "Consignas generales" },
-      { key: "particularInstructions" as const, label: "Consignas particulares" },
-      { key: "protocols" as const, label: "Protocolos" },
-      { key: "manuals" as const, label: "Instructivos/Manuales de funciones" },
-    ]
+  const renderStep4 = () => (
+    <Card className="border-0 shadow-md">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2"><FileCheck className="h-5 w-5 text-primary" /> Documentación y observaciones</CardTitle>
+        <CardDescription>Cumple o no cumple con una foto por ítem.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {documentDefinitions.map((item) => {
+          const currentItem = formData.documents[item.key]
 
-    return (
-      <Card className="border-0 shadow-md">
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <FileCheck className="h-5 w-5 text-primary" />
-            Documentación del Puesto
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {documentItems.map((item) => (
-            <div
-              key={item.key}
-              className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg"
-            >
-              <Checkbox
-                id={item.key}
-                checked={formData.documents[item.key]}
-                onCheckedChange={(checked) =>
-                  setFormData({
-                    ...formData,
-                    documents: {
-                      ...formData.documents,
-                      [item.key]: checked === true,
-                    },
-                  })
-                }
-                className="h-6 w-6"
+          return (
+            <div key={item.key} className="space-y-3 rounded-xl border border-border p-4">
+              <div>
+                <p className="font-semibold text-foreground">{item.label}</p>
+                <p className="text-sm text-muted-foreground">Indica si cumple y agrega observación y foto si aplica.</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Estado</Label>
+                <Select value={currentItem.compliant ? "cumple" : "no_cumple"} onValueChange={(value) => updateDocument(item.key, { compliant: value === "cumple" })}>
+                  <SelectTrigger className="h-12"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cumple">Cumple</SelectItem>
+                    <SelectItem value="no_cumple">No cumple</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor={`${item.key}-note`}>Observación</Label>
+                <Textarea id={`${item.key}-note`} value={currentItem.notes} onChange={(event) => updateDocument(item.key, { notes: event.target.value })} placeholder="Observación de la documentación" className="min-h-[90px]" />
+              </div>
+
+              <PhotoField
+                id={`${item.key}-photo`}
+                label={`Foto de ${item.label.toLowerCase()}`}
+                photo={currentItem.photo}
+                onFileSelected={async (file) => handleSinglePhotoUpload(file, (photo) => updateDocument(item.key, { photo }))}
+                onRemove={() => updateDocument(item.key, { photo: null })}
               />
-              <Label htmlFor={item.key} className="text-base cursor-pointer flex-1">
-                {item.label}
-              </Label>
             </div>
-          ))}
-        </CardContent>
-      </Card>
-    )
-  }
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
 
   const renderStep5 = () => (
     <Card className="border-0 shadow-md">
       <CardHeader>
-        <CardTitle className="text-lg flex items-center gap-2">
-          <CheckCircle2 className="h-5 w-5 text-primary" />
-          Motivo de Revista y Observaciones
-        </CardTitle>
+        <CardTitle className="text-lg flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-primary" /> Novedades, sugerencias y cierre</CardTitle>
+        <CardDescription>Resumen final del servicio supervisado.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="space-y-2">
-          <Label htmlFor="finalObservations">Observaciones Finales / Motivo de la Visita</Label>
-          <Textarea
-            id="finalObservations"
-            placeholder="Describa el motivo de la visita y cualquier observación adicional..."
-            value={formData.finalObservations}
-            onChange={(e) => setFormData({ ...formData, finalObservations: e.target.value })}
-            className="min-h-[150px]"
-          />
+          <Label htmlFor="novelties">Reporte de novedades</Label>
+          <Textarea id="novelties" value={formData.novelties} onChange={(event) => setFormData((current) => ({ ...current, novelties: event.target.value }))} placeholder="Describe novedades o eventos relevantes del servicio" className="min-h-[120px]" />
         </div>
-        <div className="bg-muted/50 rounded-lg p-4 space-y-2">
-          <h4 className="font-semibold text-foreground">Resumen del Reporte</h4>
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p><span className="font-medium">Cliente:</span> {formData.clientName || "No especificado"}</p>
-            <p><span className="font-medium">Puesto:</span> {formData.postName || "No especificado"}</p>
-            <p><span className="font-medium">Supervisor:</span> {formData.supervisorName || currentUser?.name || "No especificado"}</p>
-            <p><span className="font-medium">Guarda:</span> {formData.guardName || "No especificado"}</p>
-            <p><span className="font-medium">Fotos adjuntas:</span> {formData.photos.length}</p>
-          </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="suggestions">Sugerencias de seguridad</Label>
+          <Textarea id="suggestions" value={formData.suggestions} onChange={(event) => setFormData((current) => ({ ...current, suggestions: event.target.value }))} placeholder="Registra sugerencias y recomendaciones de seguridad" className="min-h-[120px]" />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="finalObservations">Observaciones finales</Label>
+          <Textarea id="finalObservations" value={formData.finalObservations} onChange={(event) => setFormData((current) => ({ ...current, finalObservations: event.target.value }))} placeholder="Cierre general del reporte" className="min-h-[120px]" />
+        </div>
+
+        <div className="rounded-xl bg-muted/50 p-4 text-sm text-muted-foreground">
+          <p><span className="font-medium text-foreground">Cliente:</span> {formData.clientName || "No especificado"}</p>
+          <p><span className="font-medium text-foreground">Puesto:</span> {formData.postName || "No especificado"}</p>
+          <p><span className="font-medium text-foreground">Tipo de servicio:</span> {formData.serviceType === "MONITOREO" ? "Monitoreo" : "Seguridad física"}</p>
+          <p><span className="font-medium text-foreground">Guarda asignado:</span> {formData.guardName || "No especificado"}</p>
+          <p><span className="font-medium text-foreground">Guarda de turno:</span> {formData.onDutyGuardName || "No especificado"}</p>
+          <p><span className="font-medium text-foreground">Evidencias:</span> {collectEvidencePhotos().length}</p>
         </div>
       </CardContent>
     </Card>
   )
 
   const renderCurrentStep = () => {
-    if (currentStep === 0) return renderContextSection()
     switch (currentStep) {
+      case 0:
+        return renderStep0()
       case 1:
         return renderStep1()
       case 2:
@@ -767,7 +923,6 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
 
   return (
     <div className="min-h-screen bg-background pb-24">
-      {/* Sticky Header with Progress */}
       <header className="sticky top-0 z-50 bg-primary text-primary-foreground">
         <div className="flex items-center justify-between p-4">
           <button onClick={onCancel} className="p-2 -ml-2 touch-manipulation">
@@ -777,8 +932,7 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
           <div className="w-10" />
         </div>
         <Progress value={progress} className="h-1 rounded-none bg-primary-foreground/20" />
-        
-        {/* GPS Status */}
+
         <div className="flex items-center justify-between px-4 py-2 bg-primary-foreground/10">
           <div className="flex items-center gap-2 text-sm">
             <MapPin className="h-4 w-4" />
@@ -792,96 +946,55 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
           </div>
           <div className="flex items-center gap-2">
             {gpsStatus === "error" && (
-              <button 
-                onClick={captureLocation}
-                className="p-1 hover:bg-primary-foreground/20 rounded"
-              >
+              <button onClick={captureLocation} className="p-1 hover:bg-primary-foreground/20 rounded">
                 <RefreshCw className="h-4 w-4" />
               </button>
             )}
-            <Badge 
+            <Badge
               variant={gpsStatus === "verified" ? "default" : "secondary"}
-              className={
-                gpsStatus === "verified" 
-                  ? "bg-success text-success-foreground" 
-                  : gpsStatus === "error"
-                  ? "bg-destructive text-destructive-foreground"
-                  : ""
-              }
+              className={gpsStatus === "verified" ? "bg-success text-success-foreground" : gpsStatus === "error" ? "bg-destructive text-destructive-foreground" : ""}
             >
-              {gpsStatus === "loading" || gpsStatus === "idle" 
-                ? "Verificando..." 
-                : gpsStatus === "verified" 
-                ? "GPS Verificado" 
-                : "Error GPS"}
+              {gpsStatus === "loading" || gpsStatus === "idle" ? "Verificando..." : gpsStatus === "verified" ? "GPS Verificado" : "Error GPS"}
             </Badge>
           </div>
         </div>
       </header>
 
-      {/* Step Indicators */}
-      <div className="flex justify-center gap-2 p-4 bg-card border-b">
+      <div className="flex justify-center gap-2 overflow-x-auto border-b bg-card p-4">
         {steps.map((step, index) => {
           const StepIcon = step.icon
-          const isActive = currentStep === index + 1
-          const isCompleted = currentStep > index + 1
-          const isContext = currentStep === 0
+          const isActive = currentStep === index
+          const isCompleted = currentStep > index
 
           return (
-            <div
-              key={step.id}
-              className={`flex flex-col items-center gap-1 ${
-                isActive ? "text-primary" : isCompleted ? "text-success" : "text-muted-foreground"
-              }`}
-            >
-              <div
-                className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium transition-colors ${
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : isCompleted
-                    ? "bg-success text-success-foreground"
-                    : isContext && index === 0
-                    ? "bg-muted text-muted-foreground"
-                    : "bg-muted text-muted-foreground"
-                }`}
-              >
+            <div key={step.id} className={`flex min-w-[56px] flex-col items-center gap-1 ${isActive ? "text-primary" : isCompleted ? "text-success" : "text-muted-foreground"}`}>
+              <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium ${isActive ? "bg-primary text-primary-foreground" : isCompleted ? "bg-success text-success-foreground" : "bg-muted text-muted-foreground"}`}>
                 {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : <StepIcon className="h-4 w-4" />}
               </div>
-              <span className="text-[10px] font-medium hidden sm:block">{step.title}</span>
+              <span className="text-center text-[10px] font-medium">{step.title}</span>
             </div>
           )
         })}
       </div>
 
-      {/* Form Content */}
       <main className="p-4">
         {renderCurrentStep()}
       </main>
 
-      {/* Navigation Buttons */}
-      <div className="fixed bottom-0 left-0 right-0 bg-card border-t p-4 flex gap-3">
+      <div className="fixed bottom-0 left-0 right-0 flex gap-3 border-t bg-card p-4">
         {currentStep > 0 && (
-          <Button
-            variant="outline"
-            onClick={handleBack}
-            className="flex-1 h-12"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Anterior
+          <Button variant="outline" onClick={() => setCurrentStep((current) => current - 1)} className="h-12 flex-1">
+            <ArrowLeft className="mr-2 h-4 w-4" /> Anterior
           </Button>
         )}
-        {currentStep < steps.length ? (
-          <Button onClick={handleNext} className="flex-1 h-12">
-            {currentStep === 0 ? "Comenzar" : "Siguiente"}
-            <ArrowRight className="h-4 w-4 ml-2" />
+
+        {currentStep < steps.length - 1 ? (
+          <Button onClick={() => setCurrentStep((current) => current + 1)} className="h-12 flex-1">
+            Siguiente <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         ) : (
-          <Button 
-            onClick={handleSubmit} 
-            className="flex-1 h-12 bg-success hover:bg-success/90 text-success-foreground"
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? "Enviando..." : "Finalizar y Enviar Reporte"}
+          <Button onClick={handleSubmit} className="h-12 flex-1 bg-success text-success-foreground hover:bg-success/90" disabled={isSubmitting}>
+            {isSubmitting ? "Enviando..." : "Finalizar y enviar reporte"}
           </Button>
         )}
       </div>

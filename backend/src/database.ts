@@ -1,4 +1,7 @@
+import dotenv from 'dotenv';
 import { Pool, PoolClient } from 'pg';
+
+dotenv.config();
 
 const useSsl = process.env.DATABASE_SSL === 'true' || process.env.PGSSLMODE === 'require';
 const isProduction = process.env.NODE_ENV === 'production';

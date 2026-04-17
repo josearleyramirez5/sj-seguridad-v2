@@ -1,4 +1,4 @@
-import express, { Express, Request, Response } from 'express';
+import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
@@ -93,11 +93,16 @@ app.use('/api/notifications', verifyToken, notificationsRouter);
 app.use('/api/rounds', verifyToken, roundsRouter);
 
 // Error handling
-app.use((err: any, req: Request, res: Response) => {
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   if (err?.type === 'entity.too.large') {
     res.status(413).json({
       error: 'El reporte excede el tamaño permitido. Reduce el peso o la cantidad de fotos e intenta nuevamente.',
     });
+    return;
+  }
+
+  if (!err) {
+    next();
     return;
   }
 

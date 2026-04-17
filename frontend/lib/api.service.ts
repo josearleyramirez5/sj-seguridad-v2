@@ -321,16 +321,26 @@ export const apiService = {
   },
 
   async updateUser(id: string, data: Partial<User>): Promise<User> {
-    const response = await axiosInstance.put<BackendUser>(`/users/${id}`, {
-      nombre: data.name,
-      role: data.backendRole,
-      is_active: data.isActive,
-    });
-    return mapUser(response.data);
+    try {
+      const response = await axiosInstance.put<BackendUser>(`/users/${id}`, {
+        nombre: data.name,
+        email: data.email,
+        role: data.backendRole,
+        is_active: data.isActive,
+        password: 'password' in data ? (data as Partial<User> & { password?: string }).password : undefined,
+      });
+      return mapUser(response.data);
+    } catch (error) {
+      throw new Error(extractErrorMessage(error, 'No fue posible actualizar el usuario'));
+    }
   },
 
   async deleteUser(id: string): Promise<void> {
-    await axiosInstance.delete(`/users/${id}`);
+    try {
+      await axiosInstance.delete(`/users/${id}`);
+    } catch (error) {
+      throw new Error(extractErrorMessage(error, 'No fue posible eliminar el usuario'));
+    }
   },
 
   async getNotifications(): Promise<Notification[]> {

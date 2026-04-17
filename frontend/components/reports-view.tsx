@@ -1,9 +1,24 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { AlertTriangle, Camera, Clock, FileText, MapPin, Pencil, Plus, Search, Shield, Trash2, User } from "lucide-react"
+import { useEffect, useMemo, useState, type ChangeEvent } from "react"
+import Image from "next/image"
+import { AlertTriangle, Camera, Clock, Download, FileText, MapPin, Pencil, Plus, Search, Shield, Trash2, User } from "lucide-react"
 import { apiService, type Report, type User as AppUser } from "@/lib/api.service"
-import { buildReportDescription, getDocumentEntries, getEquipmentEntries, parseReportDescription, type StructuredReportPayload } from "@/lib/report-structure"
+import {
+  buildReportDescription,
+  flattenEvidencePhotos,
+  getDocumentEntries,
+  getEquipmentEntries,
+  parseReportDescription,
+  type BinaryOption,
+  type ConditionOption,
+  type ServiceType,
+  type StructuredDocumentEvidence,
+  type StructuredEquipmentState,
+  type StructuredPhoto,
+  type StructuredReportPayload,
+} from "@/lib/report-structure"
+import { exportReportPdf } from "@/lib/report-pdf"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -11,8 +26,8 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
 
 type FilterStatus = "all" | Report["status"]
@@ -56,11 +71,11 @@ const initialEditorState: EditorState = {
 }
 
 const equipmentDefinitions = [
-  { key: "armament", label: "Armamento" },
-  { key: "box", label: "Cajilla" },
-  { key: "radios", label: "Radios" },
-  { key: "garrett", label: "Garrett" },
-  { key: "canine", label: "Caninos" },
+  { key: "armament", label: "Armamento", mode: "availability" },
+  { key: "box", label: "Cajilla", mode: "condition" },
+  { key: "radios", label: "Medios de comunicación", mode: "availability-condition" },
+  { key: "garrett", label: "Garrett", mode: "availability-condition" },
+  { key: "canine", label: "Caninos", mode: "availability-condition" },
 ] as const
 
 const documentDefinitions = [
@@ -70,12 +85,109 @@ const documentDefinitions = [
   { key: "manuals", label: "Manuales" },
 ] as const
 
+const MAX_IMAGE_DIMENSION = 1600
+const IMAGE_QUALITY = 0.72
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(new Error(`No fue posible leer la foto ${file.name}`))
+    reader.readAsDataURL(file)
+  })
+}
+
+function loadImage(dataUrl: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error("No fue posible procesar la imagen seleccionada"))
+    image.src = dataUrl
+  })
+}
+
+async function toCompressedPhoto(file: File): Promise<StructuredPhoto> {
+  const originalDataUrl = await readFileAsDataUrl(file)
+  const image = await loadImage(originalDataUrl)
+  const largerSide = Math.max(image.width, image.height)
+  const scale = largerSide > MAX_IMAGE_DIMENSION ? MAX_IMAGE_DIMENSION / largerSide : 1
+  const width = Math.max(1, Math.round(image.width * scale))
+  const height = Math.max(1, Math.round(image.height * scale))
+
+  const canvas = document.createElement("canvas")
+  canvas.width = width
+  canvas.height = height
+
+  const context = canvas.getContext("2d")
+  if (!context) {
+    return {
+      name: file.name,
+      dataUrl: originalDataUrl,
+    }
+  }
+
+  context.drawImage(image, 0, 0, width, height)
+
+  return {
+    name: file.name.replace(/\.[^.]+$/, ".jpg"),
+    dataUrl: canvas.toDataURL("image/jpeg", IMAGE_QUALITY),
+  }
+}
+
+function PhotoField({
+  id,
+  label,
+  photo,
+  onFileSelected,
+  onRemove,
+}: {
+  id: string
+  label: string
+  photo: StructuredPhoto | null | undefined
+  onFileSelected: (file: File) => Promise<void>
+  onRemove: () => void
+}) {
+  const handleChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+
+    await onFileSelected(file)
+    event.target.value = ""
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Input id={id} type="file" accept="image/*" capture="environment" onChange={handleChange} />
+      {photo && (
+        <div className="overflow-hidden rounded-lg border bg-muted/30">
+          <img src={photo.dataUrl} alt={photo.name || label} className="aspect-video w-full object-cover" />
+          <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground">
+            <span className="truncate">{photo.name}</span>
+            <Button type="button" variant="outline" size="sm" onClick={onRemove}>Quitar</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function normalizeEditablePayload(payload: StructuredReportPayload): StructuredReportPayload {
   return {
     ...payload,
-    version: 2,
+    version: Math.max(payload.version || 3, 3),
     assignedSupervisor: payload.assignedSupervisor ?? null,
     generatedBy: payload.generatedBy ?? null,
+    serviceType: payload.serviceType ?? "SEGURIDAD_FISICA",
+    shift: {
+      assignedGuardName: payload.shift?.assignedGuardName || payload.guard.name || "",
+      onDutyGuardName: payload.shift?.onDutyGuardName || payload.guard.name || "",
+      conditionNote: payload.shift?.conditionNote || "",
+      monitoringVisitNote: payload.shift?.monitoringVisitNote || "",
+      monitoringPhoto: payload.shift?.monitoringPhoto ?? null,
+    },
     guard: {
       userId: payload.guard.userId,
       name: payload.guard.name || "",
@@ -83,12 +195,18 @@ function normalizeEditablePayload(payload: StructuredReportPayload): StructuredR
       cedula: payload.guard.cedula || "",
       documentationOk: payload.guard.documentationOk ?? false,
       personalRating: payload.guard.personalRating ?? 0,
+      guardCardOk: payload.guard.guardCardOk ?? false,
+      accreditationOk: payload.guard.accreditationOk ?? false,
+      personalPresentationNote: payload.guard.personalPresentationNote || "",
     },
-    equipment: equipmentDefinitions.reduce<Record<string, { checked: boolean; details: string }>>((accumulator, item) => {
+    equipment: equipmentDefinitions.reduce<Record<string, StructuredEquipmentState>>((accumulator, item) => {
       const currentValue = payload.equipment[item.key]
       accumulator[item.key] = {
         checked: currentValue?.checked ?? false,
         details: currentValue?.details ?? "",
+        availability: currentValue?.availability ?? (currentValue?.checked ? "si" : "no"),
+        condition: currentValue?.condition ?? (currentValue?.checked ? "bueno" : "na"),
+        photo: currentValue?.photo ?? null,
       }
       return accumulator
     }, {}),
@@ -96,11 +214,105 @@ function normalizeEditablePayload(payload: StructuredReportPayload): StructuredR
       accumulator[item.key] = payload.documents[item.key] ?? false
       return accumulator
     }, {}),
+    documentEvidence: documentDefinitions.reduce<Record<string, StructuredDocumentEvidence>>((accumulator, item) => {
+      const currentValue = payload.documentEvidence?.[item.key]
+      accumulator[item.key] = {
+        status: currentValue?.status ?? (payload.documents[item.key] ? "cumple" : "no_cumple"),
+        note: currentValue?.note ?? "",
+        photo: currentValue?.photo ?? null,
+      }
+      return accumulator
+    }, {}),
+    installationPhoto: payload.installationPhoto ?? null,
     photos: payload.photos ?? [],
+    securityNotes: {
+      novelties: payload.securityNotes?.novelties || "",
+      suggestions: payload.securityNotes?.suggestions || "",
+    },
     finalObservations: payload.finalObservations || "",
     barrierStatus: payload.barrierStatus || "sin_registro",
     vulnerabilities: payload.vulnerabilities || "ninguna",
+    gps: payload.gps ?? null,
     alertCount: payload.alertCount ?? 0,
+    guardObservation: payload.guardObservation,
+  }
+}
+
+function computeEquipmentChecked(availability: BinaryOption | undefined, condition: ConditionOption | undefined) {
+  return availability === "si" && (condition === "bueno" || condition === "na")
+}
+
+function createEmptyStructuredPayload(user: AppUser | null): StructuredReportPayload {
+  return {
+    version: 3,
+    clientName: "",
+    postName: "",
+    assignedSupervisor: user ? {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.backendRole,
+    } : null,
+    generatedBy: user ? {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.backendRole,
+    } : null,
+    serviceType: "SEGURIDAD_FISICA",
+    shift: {
+      assignedGuardName: "",
+      onDutyGuardName: "",
+      conditionNote: "",
+      monitoringVisitNote: "",
+      monitoringPhoto: null,
+    },
+    guard: {
+      userId: undefined,
+      name: "",
+      email: undefined,
+      cedula: "",
+      documentationOk: false,
+      personalRating: 0,
+      guardCardOk: false,
+      accreditationOk: false,
+      personalPresentationNote: "",
+    },
+    equipment: Object.fromEntries(
+      equipmentDefinitions.map((item) => [
+        item.key,
+        {
+          checked: false,
+          details: "",
+          availability: item.mode === "condition" ? "si" : "no",
+          condition: item.mode === "condition" ? "bueno" : "na",
+          photo: null,
+        } satisfies StructuredEquipmentState,
+      ]),
+    ),
+    barrierStatus: "sin_registro",
+    vulnerabilities: "ninguna",
+    installationPhoto: null,
+    photos: [],
+    documents: Object.fromEntries(documentDefinitions.map((item) => [item.key, false])),
+    documentEvidence: Object.fromEntries(
+      documentDefinitions.map((item) => [
+        item.key,
+        {
+          status: "no_cumple",
+          note: "",
+          photo: null,
+        } satisfies StructuredDocumentEvidence,
+      ]),
+    ),
+    securityNotes: {
+      novelties: "",
+      suggestions: "",
+    },
+    finalObservations: "",
+    gps: null,
+    alertCount: 0,
+    guardObservation: "",
   }
 }
 
@@ -127,10 +339,12 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
   const badge = getStatusBadge(report.status)
   const equipment = getEquipmentEntries(details)
   const documents = getDocumentEntries(details)
+  const evidencePhotos = flattenEvidencePhotos(details)
   const [guardObservation, setGuardObservation] = useState(details.guardObservation || "")
   const [isSubmittingObservation, setIsSubmittingObservation] = useState(false)
+  const [isExportingPdf, setIsExportingPdf] = useState(false)
 
-  const canAddObservation = user?.role === "guard" && details.version === 2 && details.guard.userId === user.id
+  const canAddObservation = user?.role === "guard" && details.guard.userId === user.id
 
   const handleSaveObservation = async () => {
     if (!guardObservation.trim()) {
@@ -152,6 +366,19 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
     }
   }
 
+  const handleExportPdf = async () => {
+    try {
+      setIsExportingPdf(true)
+      await exportReportPdf(report, details, user)
+      toast.success("PDF generado correctamente")
+    } catch (error) {
+      console.error("Error generating PDF:", error)
+      toast.error(error instanceof Error ? error.message : "No fue posible generar el PDF")
+    } finally {
+      setIsExportingPdf(false)
+    }
+  }
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
@@ -167,7 +394,37 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
             <Badge className={badge.className}>{badge.label}</Badge>
             <Badge variant="outline">{report.alertCount} alertas</Badge>
             <Badge variant="outline">{report.location}</Badge>
+            <Badge variant="outline">{details.serviceType === "MONITOREO" ? "Monitoreo" : "Seguridad física"}</Badge>
+            <Button size="sm" variant="outline" className="ml-auto" onClick={handleExportPdf} disabled={isExportingPdf}>
+              <Download className="mr-2 h-4 w-4" /> {isExportingPdf ? "Generando PDF..." : "Descargar PDF"}
+            </Button>
           </div>
+
+          <Card className="border-0 shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base"><FileText className="h-4 w-4 text-primary" /> Servicio y turno</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3 text-sm md:grid-cols-2">
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-muted-foreground">Tipo de servicio</p>
+                <p className="font-medium">{details.serviceType === "MONITOREO" ? "Monitoreo" : "Seguridad física"}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-muted-foreground">Guarda de turno</p>
+                <p className="font-medium">{details.shift?.onDutyGuardName || details.guard.name}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3 md:col-span-2">
+                <p className="text-muted-foreground">Condición del turno</p>
+                <p className="font-medium">{details.shift?.conditionNote || "Sin observaciones del turno."}</p>
+              </div>
+              {details.serviceType === "MONITOREO" && (
+                <div className="rounded-lg bg-muted/50 p-3 md:col-span-2">
+                  <p className="text-muted-foreground">Detalle de la visita de monitoreo</p>
+                  <p className="font-medium">{details.shift?.monitoringVisitNote || "Sin detalle registrado."}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <Card className="border-0 shadow-sm">
             <CardHeader>
@@ -189,6 +446,23 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
                 <p className="font-medium">{details.guard.name}</p>
                 <p className="text-muted-foreground">Cédula: {details.guard.cedula}</p>
               </div>
+              {details.serviceType === "SEGURIDAD_FISICA" && (
+                <>
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <p className="text-muted-foreground">Carné del guarda</p>
+                    <p className="font-medium">{details.guard.guardCardOk ? "Sí" : "No"}</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <p className="text-muted-foreground">Acreditación vigente</p>
+                    <p className="font-medium">{details.guard.accreditationOk ? "Sí" : "No"}</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-3 md:col-span-3">
+                    <p className="text-muted-foreground">Presentación personal</p>
+                    <p className="font-medium">{details.guard.personalRating}/5</p>
+                    <p className="text-muted-foreground">{details.guard.personalPresentationNote || "Sin observaciones adicionales."}</p>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -200,7 +474,10 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
               {equipment.length > 0 ? equipment.map((item) => (
                 <div key={item.key} className="rounded-lg bg-muted/50 p-3">
                   <p className="font-medium">{item.label}</p>
-                  <p className="text-muted-foreground">{item.checked ? "Sin novedades" : item.details || "Pendiente por validar"}</p>
+                  <p className="text-muted-foreground">Disponibilidad: {item.availability?.toUpperCase() || "N/A"}</p>
+                  <p className="text-muted-foreground">Estado: {item.condition || "na"}</p>
+                  <p className="text-muted-foreground">{item.details || "Sin observaciones."}</p>
+                  {item.photo && <img src={item.photo.dataUrl} alt={item.photo.name || item.label} className="mt-3 aspect-video w-full rounded-lg object-cover" />}
                 </div>
               )) : <p className="text-muted-foreground">Sin información de dotación.</p>}
             </CardContent>
@@ -219,6 +496,12 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
                 <p className="text-muted-foreground">Vulnerabilidades</p>
                 <p className="font-medium">{details.vulnerabilities}</p>
               </div>
+              {details.installationPhoto && (
+                <div className="rounded-lg bg-muted/50 p-3">
+                  <p className="mb-2 text-muted-foreground">Foto de instalaciones</p>
+                  <img src={details.installationPhoto.dataUrl} alt={details.installationPhoto.name || "Instalaciones"} className="aspect-video w-full rounded-lg object-cover" />
+                </div>
+              )}
               {details.gps && (
                 <div className="rounded-lg bg-muted/50 p-3">
                   <p className="text-muted-foreground">Ubicación GPS</p>
@@ -235,11 +518,23 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
             <CardContent className="space-y-3 text-sm">
               <div className="grid gap-2 md:grid-cols-2">
                 {documents.length > 0 ? documents.map((item) => (
-                  <div key={item.key} className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
-                    <span>{item.label}</span>
-                    <Badge variant={item.value ? "default" : "outline"}>{item.value ? "Disponible" : "Pendiente"}</Badge>
+                  <div key={item.key} className="rounded-lg bg-muted/50 px-3 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>{item.label}</span>
+                      <Badge variant={item.value ? "default" : "outline"}>{item.evidence.status === "cumple" ? "Cumple" : "No cumple"}</Badge>
+                    </div>
+                    <p className="mt-2 text-muted-foreground">{item.evidence.note || "Sin observaciones."}</p>
+                    {item.evidence.photo && <img src={item.evidence.photo.dataUrl} alt={item.evidence.photo.name || item.label} className="mt-3 aspect-video w-full rounded-lg object-cover" />}
                   </div>
                 )) : <p className="text-muted-foreground">Sin información documental.</p>}
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-muted-foreground">Reporte de novedades</p>
+                <p className="font-medium">{details.securityNotes?.novelties || "Sin novedades registradas."}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-muted-foreground">Sugerencias de seguridad</p>
+                <p className="font-medium">{details.securityNotes?.suggestions || "Sin sugerencias registradas."}</p>
               </div>
               <div className="rounded-lg bg-muted/50 p-3">
                 <p className="text-muted-foreground">Observaciones finales</p>
@@ -273,9 +568,9 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
               <CardTitle className="flex items-center gap-2 text-base"><Camera className="h-4 w-4 text-primary" /> Evidencia fotográfica</CardTitle>
             </CardHeader>
             <CardContent>
-              {details.photos.length > 0 ? (
+              {evidencePhotos.length > 0 ? (
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-                  {details.photos.map((photo, index) => (
+                  {evidencePhotos.map((photo, index) => (
                     <div key={`${photo.name}-${index}`} className="overflow-hidden rounded-lg border bg-muted/30">
                       <img src={photo.dataUrl} alt={photo.name || `Foto ${index + 1}`} className="aspect-square w-full object-cover" />
                       <div className="px-3 py-2 text-xs text-muted-foreground">{photo.name || `Foto ${index + 1}`}</div>
@@ -320,6 +615,75 @@ export function ReportsView({ user }: ReportsViewProps) {
     })
   }
 
+  const updateStructuredPhoto = (applyPhoto: (photo: StructuredPhoto) => void) => {
+    return async (file: File) => {
+      try {
+        const photo = await toCompressedPhoto(file)
+        applyPhoto(photo)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "No fue posible adjuntar la foto")
+      }
+    }
+  }
+
+  const updateEquipmentState = (
+    key: (typeof equipmentDefinitions)[number]["key"],
+    patch: Partial<StructuredEquipmentState>,
+  ) => {
+    updateStructuredPayload((payload) => {
+      const currentItem = payload.equipment[key] || { checked: false, details: "", availability: "no", condition: "na", photo: null }
+      const nextItem = {
+        ...currentItem,
+        ...patch,
+      }
+
+      const availability = nextItem.availability ?? (nextItem.checked ? "si" : "no")
+      const condition = nextItem.condition ?? (availability === "si" ? "bueno" : "na")
+
+      return {
+        ...payload,
+        equipment: {
+          ...payload.equipment,
+          [key]: {
+            ...nextItem,
+            availability,
+            condition,
+            checked: computeEquipmentChecked(availability, condition),
+          },
+        },
+      }
+    })
+  }
+
+  const updateDocumentState = (
+    key: (typeof documentDefinitions)[number]["key"],
+    patch: Partial<StructuredDocumentEvidence>,
+  ) => {
+    updateStructuredPayload((payload) => {
+      const currentItem = payload.documentEvidence?.[key] || {
+        status: payload.documents[key] ? "cumple" : "no_cumple",
+        note: "",
+        photo: null,
+      }
+      const nextItem = {
+        ...currentItem,
+        ...patch,
+      }
+
+      return {
+        ...payload,
+        documents: {
+          ...payload.documents,
+          [key]: nextItem.status === "cumple",
+        },
+        documentEvidence: {
+          ...(payload.documentEvidence || {}),
+          [key]: nextItem,
+        },
+      }
+    })
+  }
+
   useEffect(() => {
     void loadReports()
   }, [])
@@ -343,7 +707,11 @@ export function ReportsView({ user }: ReportsViewProps) {
 
   const openCreateModal = () => {
     setEditingReportId(null)
-    setEditorState(initialEditorState)
+    setEditorState({
+      ...initialEditorState,
+      mode: "structured",
+      payload: createEmptyStructuredPayload(user),
+    })
     setIsEditorOpen(true)
   }
 
@@ -379,9 +747,26 @@ export function ReportsView({ user }: ReportsViewProps) {
         toast.error("Completa título, ubicación y descripción del reporte")
         return
       }
-    } else if (!editorState.clientName.trim() || !editorState.postName.trim() || !editorState.payload) {
-      toast.error("Completa cliente y puesto antes de guardar")
-      return
+    } else {
+      if (!editorState.clientName.trim() || !editorState.postName.trim() || !editorState.payload) {
+        toast.error("Completa cliente y puesto antes de guardar")
+        return
+      }
+
+      if (!editorState.payload.guard.name.trim() || !editorState.payload.guard.cedula.trim()) {
+        toast.error("Completa nombre y cédula del guarda antes de guardar")
+        return
+      }
+
+      if (!editorState.payload.shift?.assignedGuardName.trim() || !editorState.payload.shift?.onDutyGuardName.trim()) {
+        toast.error("Completa guarda asignado y guarda de turno antes de guardar")
+        return
+      }
+
+      if (editorState.payload.serviceType === "MONITOREO" && !editorState.payload.shift?.monitoringVisitNote.trim()) {
+        toast.error("Para monitoreo debes registrar el detalle de la visita")
+        return
+      }
     }
 
     setIsSaving(true)
@@ -389,7 +774,7 @@ export function ReportsView({ user }: ReportsViewProps) {
     try {
       if (editingReportId) {
         if (editorState.mode === "structured" && editorState.payload) {
-          const updatedPayload = normalizeEditablePayload({
+          const updatedPayloadBase = normalizeEditablePayload({
             ...editorState.payload,
             clientName: editorState.clientName.trim(),
             postName: editorState.postName.trim(),
@@ -397,6 +782,14 @@ export function ReportsView({ user }: ReportsViewProps) {
             vulnerabilities: editorState.vulnerabilities.trim() || "ninguna",
             finalObservations: editorState.finalObservations.trim() || "Sin observaciones adicionales.",
           })
+
+          const updatedPayload = {
+            ...updatedPayloadBase,
+            photos: flattenEvidencePhotos({
+              ...updatedPayloadBase,
+              photos: [],
+            }),
+          }
 
           const updated = await apiService.updateReport(editingReportId, {
             title: `${updatedPayload.clientName} - ${updatedPayload.postName}`,
@@ -417,14 +810,42 @@ export function ReportsView({ user }: ReportsViewProps) {
 
         toast.success("Reporte actualizado")
       } else {
-        const created = await apiService.createReport({
-          title: editorState.title.trim(),
-          location: editorState.location.trim(),
-          description: editorState.description.trim(),
-          scheduledAt: new Date().toISOString(),
-        })
+        if (editorState.mode === "structured" && editorState.payload) {
+          const createdPayloadBase = normalizeEditablePayload({
+            ...editorState.payload,
+            clientName: editorState.clientName.trim(),
+            postName: editorState.postName.trim(),
+            barrierStatus: editorState.barrierStatus || "sin_registro",
+            vulnerabilities: editorState.vulnerabilities.trim() || "ninguna",
+            finalObservations: editorState.finalObservations.trim() || "Sin observaciones adicionales.",
+          })
 
-        setReports((current) => [created, ...current])
+          const createdPayload = {
+            ...createdPayloadBase,
+            photos: flattenEvidencePhotos({
+              ...createdPayloadBase,
+              photos: [],
+            }),
+          }
+
+          const created = await apiService.createReport({
+            title: `${createdPayload.clientName} - ${createdPayload.postName}`,
+            location: `${createdPayload.clientName} / ${createdPayload.postName}`,
+            description: buildReportDescription(createdPayload),
+            scheduledAt: new Date().toISOString(),
+          })
+
+          setReports((current) => [created, ...current])
+        } else {
+          const created = await apiService.createReport({
+            title: editorState.title.trim(),
+            location: editorState.location.trim(),
+            description: editorState.description.trim(),
+            scheduledAt: new Date().toISOString(),
+          })
+
+          setReports((current) => [created, ...current])
+        }
         toast.success("Reporte creado")
       }
 
@@ -484,9 +905,18 @@ export function ReportsView({ user }: ReportsViewProps) {
     <div className="min-h-screen bg-background pb-24">
       <header className="bg-primary px-4 py-5 text-primary-foreground">
         <div className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold">Reportes</h1>
-            <p className="text-sm text-primary-foreground/80">Historial real de inspecciones registradas</p>
+          <div className="flex items-center gap-4">
+            <Image
+              src="/sj-logo.svg"
+              alt="SJ Seguridad Privada Ltda"
+              width={120}
+              height={34}
+              className="h-auto w-auto rounded-md bg-white/95 px-2 py-1"
+            />
+            <div>
+              <h1 className="text-xl font-bold">Reportes</h1>
+              <p className="text-sm text-primary-foreground/80">Historial real de inspecciones registradas</p>
+            </div>
           </div>
           {canManageReports && (
             <Button variant="secondary" size="sm" onClick={openCreateModal}>
@@ -599,217 +1029,506 @@ export function ReportsView({ user }: ReportsViewProps) {
           <div className="space-y-3">
             {editorState.mode === "structured" ? (
               <>
-                  <Card className="border-0 shadow-sm">
-                    <CardHeader>
-                      <CardTitle className="text-base">Resumen</CardTitle>
-                    </CardHeader>
-                    <CardContent className="grid gap-3 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="clientName">Cliente</Label>
-                        <Input
-                          id="clientName"
-                          value={editorState.clientName}
-                          onChange={(event) => setEditorState((current) => ({ ...current, clientName: event.target.value }))}
-                          placeholder="Cliente"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="postName">Puesto</Label>
-                        <Input
-                          id="postName"
-                          value={editorState.postName}
-                          onChange={(event) => setEditorState((current) => ({ ...current, postName: event.target.value }))}
-                          placeholder="Puesto"
-                        />
-                      </div>
-                    </CardContent>
-                  </Card>
+                <Card className="border-0 shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-base">Resumen</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid gap-3 md:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="clientName">Cliente</Label>
+                      <Input
+                        id="clientName"
+                        value={editorState.clientName}
+                        onChange={(event) => setEditorState((current) => ({ ...current, clientName: event.target.value }))}
+                        placeholder="Cliente"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="postName">Puesto</Label>
+                      <Input
+                        id="postName"
+                        value={editorState.postName}
+                        onChange={(event) => setEditorState((current) => ({ ...current, postName: event.target.value }))}
+                        placeholder="Puesto"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Tipo de servicio</Label>
+                      <Select
+                        value={editorState.payload?.serviceType || "SEGURIDAD_FISICA"}
+                        onValueChange={(value: ServiceType) => updateStructuredPayload((payload) => ({
+                          ...payload,
+                          serviceType: value,
+                        }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Tipo de servicio" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="MONITOREO">Monitoreo</SelectItem>
+                          <SelectItem value="SEGURIDAD_FISICA">Seguridad física</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CardContent>
+                </Card>
 
-                  {editorState.payload && (
-                    <>
-                      <Card className="border-0 shadow-sm">
-                        <CardHeader>
-                          <CardTitle className="text-base">Guarda asignado</CardTitle>
-                        </CardHeader>
-                        <CardContent className="grid gap-3 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <Label htmlFor="guardName">Nombre</Label>
-                            <Input
-                              id="guardName"
-                              value={editorState.payload.guard.name}
-                              onChange={(event) => updateStructuredPayload((payload) => ({
-                                ...payload,
-                                guard: {
-                                  ...payload.guard,
-                                  name: event.target.value,
-                                },
-                              }))}
-                              placeholder="Nombre del guarda"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="guardCedula">Cédula</Label>
-                            <Input
-                              id="guardCedula"
-                              value={editorState.payload.guard.cedula}
-                              onChange={(event) => updateStructuredPayload((payload) => ({
-                                ...payload,
-                                guard: {
-                                  ...payload.guard,
-                                  cedula: event.target.value,
-                                },
-                              }))}
-                              placeholder="Documento"
-                            />
-                          </div>
-                          <div className="rounded-lg bg-muted/50 p-3 md:col-span-2">
-                            <div className="flex items-center justify-between gap-4">
-                              <div>
-                                <p className="font-medium">Documentación al día</p>
-                                <p className="text-sm text-muted-foreground">Marca si la documentación del guarda está completa.</p>
-                              </div>
-                              <Switch
-                                checked={editorState.payload.guard.documentationOk}
-                                onCheckedChange={(checked) => updateStructuredPayload((payload) => ({
+                {editorState.payload && (
+                  <>
+                    <Card className="border-0 shadow-sm">
+                      <CardHeader>
+                        <CardTitle className="text-base">Servicio y turno</CardTitle>
+                      </CardHeader>
+                      <CardContent className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="assignedGuardName">Guarda asignado</Label>
+                          <Input
+                            id="assignedGuardName"
+                            value={editorState.payload.shift?.assignedGuardName || ""}
+                            onChange={(event) => updateStructuredPayload((payload) => ({
+                              ...payload,
+                              shift: {
+                                ...payload.shift,
+                                assignedGuardName: event.target.value,
+                              },
+                            }))}
+                            placeholder="Guarda asignado"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="onDutyGuardName">Guarda de turno</Label>
+                          <Input
+                            id="onDutyGuardName"
+                            value={editorState.payload.shift?.onDutyGuardName || ""}
+                            onChange={(event) => updateStructuredPayload((payload) => ({
+                              ...payload,
+                              shift: {
+                                ...payload.shift,
+                                onDutyGuardName: event.target.value,
+                              },
+                            }))}
+                            placeholder="Guarda de turno"
+                          />
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <Label htmlFor="shiftConditionNote">Condición del turno</Label>
+                          <Textarea
+                            id="shiftConditionNote"
+                            value={editorState.payload.shift?.conditionNote || ""}
+                            onChange={(event) => updateStructuredPayload((payload) => ({
+                              ...payload,
+                              shift: {
+                                ...payload.shift,
+                                conditionNote: event.target.value,
+                              },
+                            }))}
+                            placeholder="Condición general del turno"
+                            className="min-h-[100px]"
+                          />
+                        </div>
+                        {editorState.payload.serviceType === "MONITOREO" && (
+                          <>
+                            <div className="space-y-2 md:col-span-2">
+                              <Label htmlFor="monitoringVisitNote">Detalle de la visita de monitoreo</Label>
+                              <Textarea
+                                id="monitoringVisitNote"
+                                value={editorState.payload.shift?.monitoringVisitNote || ""}
+                                onChange={(event) => updateStructuredPayload((payload) => ({
                                   ...payload,
-                                  guard: {
-                                    ...payload.guard,
-                                    documentationOk: checked,
+                                  shift: {
+                                    ...payload.shift,
+                                    monitoringVisitNote: event.target.value,
+                                  },
+                                }))}
+                                placeholder="Detalle breve de la visita"
+                                className="min-h-[120px]"
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <PhotoField
+                                id="monitoringPhoto"
+                                label="Foto de monitoreo"
+                                photo={editorState.payload.shift?.monitoringPhoto}
+                                onFileSelected={updateStructuredPhoto((photo) => updateStructuredPayload((payload) => ({
+                                  ...payload,
+                                  shift: {
+                                    ...payload.shift,
+                                    monitoringPhoto: photo,
+                                  },
+                                })))}
+                                onRemove={() => updateStructuredPayload((payload) => ({
+                                  ...payload,
+                                  shift: {
+                                    ...payload.shift,
+                                    monitoringPhoto: null,
                                   },
                                 }))}
                               />
                             </div>
-                          </div>
-                          <div className="space-y-2 md:col-span-2">
-                            <Label htmlFor="guardRating">Presentación personal</Label>
-                            <Input
-                              id="guardRating"
-                              type="number"
-                              min="0"
-                              max="5"
-                              value={editorState.payload.guard.personalRating}
-                              onChange={(event) => updateStructuredPayload((payload) => ({
+                          </>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-0 shadow-sm">
+                      <CardHeader>
+                        <CardTitle className="text-base">Guarda asignado</CardTitle>
+                      </CardHeader>
+                      <CardContent className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="guardName">Nombre</Label>
+                          <Input
+                            id="guardName"
+                            value={editorState.payload.guard.name}
+                            onChange={(event) => updateStructuredPayload((payload) => ({
+                              ...payload,
+                              guard: {
+                                ...payload.guard,
+                                name: event.target.value,
+                              },
+                            }))}
+                            placeholder="Nombre del guarda"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="guardCedula">Cédula</Label>
+                          <Input
+                            id="guardCedula"
+                            value={editorState.payload.guard.cedula}
+                            onChange={(event) => updateStructuredPayload((payload) => ({
+                              ...payload,
+                              guard: {
+                                ...payload.guard,
+                                cedula: event.target.value,
+                              },
+                            }))}
+                            placeholder="Documento"
+                          />
+                        </div>
+                        <div className="rounded-lg bg-muted/50 p-3 md:col-span-2">
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <p className="font-medium">Documentación al día</p>
+                              <p className="text-sm text-muted-foreground">Marca si la documentación del guarda está completa.</p>
+                            </div>
+                            <Switch
+                              checked={editorState.payload.guard.documentationOk}
+                              onCheckedChange={(checked) => updateStructuredPayload((payload) => ({
                                 ...payload,
                                 guard: {
                                   ...payload.guard,
-                                  personalRating: Math.max(0, Math.min(5, Number.parseInt(event.target.value || "0", 10) || 0)),
+                                  documentationOk: checked,
                                 },
                               }))}
-                              placeholder="0 a 5"
                             />
                           </div>
-                        </CardContent>
-                      </Card>
-
-                      <Card className="border-0 shadow-sm">
-                        <CardHeader>
-                          <CardTitle className="text-base">Instalaciones</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                          <div className="space-y-2">
-                            <Label htmlFor="barrierStatus">Estado de barreras</Label>
-                            <Input
-                              id="barrierStatus"
-                              value={editorState.barrierStatus}
-                              onChange={(event) => setEditorState((current) => ({ ...current, barrierStatus: event.target.value }))}
-                              placeholder="Estado de barreras"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="vulnerabilities">Vulnerabilidades</Label>
-                            <Textarea
-                              id="vulnerabilities"
-                              value={editorState.vulnerabilities}
-                              onChange={(event) => setEditorState((current) => ({ ...current, vulnerabilities: event.target.value }))}
-                              placeholder="Vulnerabilidades"
-                              className="min-h-[100px]"
-                            />
-                          </div>
-                        </CardContent>
-                      </Card>
-
-                      <Card className="border-0 shadow-sm">
-                        <CardHeader>
-                          <CardTitle className="text-base">Documentación del puesto</CardTitle>
-                        </CardHeader>
-                        <CardContent className="grid gap-3 md:grid-cols-2">
-                          {documentDefinitions.map((item) => (
-                            <label key={item.key} className="flex items-center gap-3 rounded-lg bg-muted/50 p-3">
-                              <Checkbox
-                                checked={editorState.payload?.documents[item.key] ?? false}
-                                onCheckedChange={(checked) => updateStructuredPayload((payload) => ({
+                        </div>
+                        {editorState.payload.serviceType === "SEGURIDAD_FISICA" && (
+                          <>
+                            <div className="rounded-lg bg-muted/50 p-3">
+                              <div className="flex items-center justify-between gap-4">
+                                <div>
+                                  <p className="font-medium">Carné del guarda</p>
+                                  <p className="text-sm text-muted-foreground">Valida si el guarda porta carné.</p>
+                                </div>
+                                <Switch
+                                  checked={editorState.payload.guard.guardCardOk ?? false}
+                                  onCheckedChange={(checked) => updateStructuredPayload((payload) => ({
+                                    ...payload,
+                                    guard: {
+                                      ...payload.guard,
+                                      guardCardOk: checked,
+                                    },
+                                  }))}
+                                />
+                              </div>
+                            </div>
+                            <div className="rounded-lg bg-muted/50 p-3">
+                              <div className="flex items-center justify-between gap-4">
+                                <div>
+                                  <p className="font-medium">Acreditación vigente</p>
+                                  <p className="text-sm text-muted-foreground">Valida acreditación activa.</p>
+                                </div>
+                                <Switch
+                                  checked={editorState.payload.guard.accreditationOk ?? false}
+                                  onCheckedChange={(checked) => updateStructuredPayload((payload) => ({
+                                    ...payload,
+                                    guard: {
+                                      ...payload.guard,
+                                      accreditationOk: checked,
+                                    },
+                                  }))}
+                                />
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="guardRating">Presentación personal</Label>
+                              <Input
+                                id="guardRating"
+                                type="number"
+                                min="0"
+                                max="5"
+                                value={editorState.payload.guard.personalRating}
+                                onChange={(event) => updateStructuredPayload((payload) => ({
                                   ...payload,
-                                  documents: {
-                                    ...payload.documents,
-                                    [item.key]: checked === true,
+                                  guard: {
+                                    ...payload.guard,
+                                    personalRating: Math.max(0, Math.min(5, Number.parseInt(event.target.value || "0", 10) || 0)),
                                   },
                                 }))}
+                                placeholder="0 a 5"
                               />
-                              <span className="text-sm font-medium">{item.label}</span>
-                            </label>
-                          ))}
-                        </CardContent>
-                      </Card>
+                            </div>
+                            <div className="space-y-2 md:col-span-2">
+                              <Label htmlFor="personalPresentationNote">Observación de presentación personal</Label>
+                              <Textarea
+                                id="personalPresentationNote"
+                                value={editorState.payload.guard.personalPresentationNote || ""}
+                                onChange={(event) => updateStructuredPayload((payload) => ({
+                                  ...payload,
+                                  guard: {
+                                    ...payload.guard,
+                                    personalPresentationNote: event.target.value,
+                                  },
+                                }))}
+                                placeholder="Detalle de presentación personal"
+                                className="min-h-[100px]"
+                              />
+                            </div>
+                          </>
+                        )}
+                      </CardContent>
+                    </Card>
 
-                      <Card className="border-0 shadow-sm">
-                        <CardHeader>
-                          <CardTitle className="text-base">Dotación</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                          {equipmentDefinitions.map((item) => {
-                            const equipmentState = editorState.payload?.equipment[item.key]
+                    <Card className="border-0 shadow-sm">
+                      <CardHeader>
+                        <CardTitle className="text-base">Instalaciones</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="space-y-2">
+                          <Label>Estado de barreras</Label>
+                          <Select value={editorState.barrierStatus} onValueChange={(value) => setEditorState((current) => ({ ...current, barrierStatus: value }))}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Estado de barreras" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="sin_registro">Sin registro</SelectItem>
+                              <SelectItem value="bueno">Bueno</SelectItem>
+                              <SelectItem value="regular">Regular</SelectItem>
+                              <SelectItem value="malo">Malo</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="vulnerabilities">Vulnerabilidades</Label>
+                          <Textarea
+                            id="vulnerabilities"
+                            value={editorState.vulnerabilities}
+                            onChange={(event) => setEditorState((current) => ({ ...current, vulnerabilities: event.target.value }))}
+                            placeholder="Vulnerabilidades, riesgos o hallazgos"
+                            className="min-h-[100px]"
+                          />
+                        </div>
+                        <PhotoField
+                          id="installationPhoto"
+                          label="Foto de instalaciones"
+                          photo={editorState.payload.installationPhoto}
+                          onFileSelected={updateStructuredPhoto((photo) => updateStructuredPayload((payload) => ({
+                            ...payload,
+                            installationPhoto: photo,
+                          })))}
+                          onRemove={() => updateStructuredPayload((payload) => ({
+                            ...payload,
+                            installationPhoto: null,
+                          }))}
+                        />
+                      </CardContent>
+                    </Card>
 
-                            return (
-                              <div key={item.key} className="space-y-2 rounded-lg bg-muted/50 p-3">
-                                <div className="flex items-center justify-between gap-4">
-                                  <div>
-                                    <p className="font-medium">{item.label}</p>
-                                    <p className="text-sm text-muted-foreground">Marca si el elemento está conforme.</p>
-                                  </div>
-                                  <Switch
-                                    checked={equipmentState?.checked ?? false}
-                                    onCheckedChange={(checked) => updateStructuredPayload((payload) => ({
-                                      ...payload,
-                                      equipment: {
-                                        ...payload.equipment,
-                                        [item.key]: {
-                                          checked,
-                                          details: checked ? "" : payload.equipment[item.key]?.details || "",
-                                        },
-                                      },
-                                    }))}
-                                  />
-                                </div>
-                                {!(equipmentState?.checked ?? false) && (
-                                  <Textarea
-                                    value={equipmentState?.details || ""}
-                                    onChange={(event) => updateStructuredPayload((payload) => ({
-                                      ...payload,
-                                      equipment: {
-                                        ...payload.equipment,
-                                        [item.key]: {
-                                          checked: false,
-                                          details: event.target.value,
-                                        },
-                                      },
-                                    }))}
-                                    placeholder="Detalle de la novedad"
-                                    className="min-h-[90px]"
-                                  />
-                                )}
+                    <Card className="border-0 shadow-sm">
+                      <CardHeader>
+                        <CardTitle className="text-base">Documentación del puesto</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {documentDefinitions.map((item) => {
+                          const documentState = editorState.payload.documentEvidence?.[item.key] || {
+                            status: editorState.payload.documents[item.key] ? "cumple" : "no_cumple",
+                            note: "",
+                            photo: null,
+                          }
+
+                          return (
+                            <div key={item.key} className="space-y-3 rounded-lg bg-muted/50 p-3">
+                              <div>
+                                <p className="font-medium">{item.label}</p>
+                                <p className="text-sm text-muted-foreground">Estado, observación y foto de soporte.</p>
                               </div>
-                            )
-                          })}
-                        </CardContent>
-                      </Card>
-                    </>
-                  )}
+                              <div className="space-y-2">
+                                <Label>Estado</Label>
+                                <Select value={documentState.status} onValueChange={(value: StructuredDocumentEvidence["status"]) => updateDocumentState(item.key, { status: value })}>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Estado" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="cumple">Cumple</SelectItem>
+                                    <SelectItem value="no_cumple">No cumple</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor={`${item.key}-note`}>Observación</Label>
+                                <Textarea
+                                  id={`${item.key}-note`}
+                                  value={documentState.note}
+                                  onChange={(event) => updateDocumentState(item.key, { note: event.target.value })}
+                                  placeholder="Observación de este documento"
+                                  className="min-h-[90px]"
+                                />
+                              </div>
+                              <PhotoField
+                                id={`${item.key}-photo`}
+                                label={`Foto de ${item.label.toLowerCase()}`}
+                                photo={documentState.photo}
+                                onFileSelected={updateStructuredPhoto((photo) => updateDocumentState(item.key, { photo }))}
+                                onRemove={() => updateDocumentState(item.key, { photo: null })}
+                              />
+                            </div>
+                          )
+                        })}
+                      </CardContent>
+                    </Card>
 
-                  <Card className="border-0 shadow-sm">
-                    <CardHeader>
-                      <CardTitle className="text-base">Cierre</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
+                    <Card className="border-0 shadow-sm">
+                      <CardHeader>
+                        <CardTitle className="text-base">Dotación</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {equipmentDefinitions.map((item) => {
+                          const equipmentState = editorState.payload.equipment[item.key] || {
+                            checked: false,
+                            details: "",
+                            availability: item.mode === "condition" ? "si" : "no",
+                            condition: "na",
+                            photo: null,
+                          }
+                          const showCondition = item.mode === "condition" || (item.mode === "availability-condition" && equipmentState.availability === "si")
+
+                          return (
+                            <div key={item.key} className="space-y-3 rounded-lg bg-muted/50 p-3">
+                              <div>
+                                <p className="font-medium">{item.label}</p>
+                                <p className="text-sm text-muted-foreground">Disponibilidad, estado, observación y evidencia.</p>
+                              </div>
+                              {item.mode !== "condition" && (
+                                <div className="space-y-2">
+                                  <Label>Disponibilidad</Label>
+                                  <Select
+                                    value={equipmentState.availability || "no"}
+                                    onValueChange={(value: BinaryOption) => updateEquipmentState(item.key, {
+                                      availability: value,
+                                      condition: value === "si"
+                                        ? (equipmentState.condition === "na" ? "bueno" : equipmentState.condition)
+                                        : "na",
+                                    })}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Disponibilidad" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="si">Sí</SelectItem>
+                                      <SelectItem value="no">No</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              )}
+                              {showCondition && (
+                                <div className="space-y-2">
+                                  <Label>Estado</Label>
+                                  <Select
+                                    value={equipmentState.condition || "na"}
+                                    onValueChange={(value: ConditionOption) => updateEquipmentState(item.key, {
+                                      availability: item.mode === "condition" ? "si" : equipmentState.availability,
+                                      condition: value,
+                                    })}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Estado" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="bueno">Bueno</SelectItem>
+                                      <SelectItem value="regular">Regular</SelectItem>
+                                      <SelectItem value="malo">Malo</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              )}
+                              <div className="space-y-2">
+                                <Label htmlFor={`${item.key}-details`}>Observación</Label>
+                                <Textarea
+                                  id={`${item.key}-details`}
+                                  value={equipmentState.details}
+                                  onChange={(event) => updateEquipmentState(item.key, { details: event.target.value })}
+                                  placeholder="Observación de este elemento"
+                                  className="min-h-[90px]"
+                                />
+                              </div>
+                              <PhotoField
+                                id={`${item.key}-photo`}
+                                label={`Foto de ${item.label.toLowerCase()}`}
+                                photo={equipmentState.photo}
+                                onFileSelected={updateStructuredPhoto((photo) => updateEquipmentState(item.key, { photo }))}
+                                onRemove={() => updateEquipmentState(item.key, { photo: null })}
+                              />
+                            </div>
+                          )
+                        })}
+                      </CardContent>
+                    </Card>
+                  </>
+                )}
+
+                <Card className="border-0 shadow-sm">
+                  <CardHeader>
+                    <CardTitle className="text-base">Cierre</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {editorState.payload && (
+                      <>
+                        <div className="space-y-2">
+                          <Label htmlFor="novelties">Reporte de novedades</Label>
+                          <Textarea
+                            id="novelties"
+                            value={editorState.payload.securityNotes?.novelties || ""}
+                            onChange={(event) => updateStructuredPayload((payload) => ({
+                              ...payload,
+                              securityNotes: {
+                                novelties: event.target.value,
+                                suggestions: payload.securityNotes?.suggestions || "",
+                              },
+                            }))}
+                            placeholder="Novedades del servicio"
+                            className="min-h-[100px]"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="suggestions">Sugerencias de seguridad</Label>
+                          <Textarea
+                            id="suggestions"
+                            value={editorState.payload.securityNotes?.suggestions || ""}
+                            onChange={(event) => updateStructuredPayload((payload) => ({
+                              ...payload,
+                              securityNotes: {
+                                novelties: payload.securityNotes?.novelties || "",
+                                suggestions: event.target.value,
+                              },
+                            }))}
+                            placeholder="Sugerencias de seguridad"
+                            className="min-h-[100px]"
+                          />
+                        </div>
+                      </>
+                    )}
+                    <div className="space-y-2">
                       <Label htmlFor="finalObservations">Observaciones finales</Label>
                       <Textarea
                         id="finalObservations"
@@ -818,8 +1537,9 @@ export function ReportsView({ user }: ReportsViewProps) {
                         placeholder="Observaciones finales"
                         className="min-h-[120px]"
                       />
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </CardContent>
+                </Card>
               </>
             ) : (
               <>
