@@ -53,14 +53,14 @@ function buildEvaluationRows(details: StructuredReportPayload): EvaluationRow[] 
     level: details.vulnerabilities.trim().toLowerCase() === 'ninguna' ? 'seguro' : 'en_riesgo',
   })
 
-  rows.push({
-    category: 'Personal de seguridad',
-    item: 'Documentación del guarda',
-    value: details.guard.documentationOk ? 'Al día' : 'Pendiente',
-    level: details.guard.documentationOk ? 'conforme' : 'no_conforme',
-  })
-
   if (details.serviceType === 'SEGURIDAD_FISICA') {
+    rows.push({
+      category: 'Personal de seguridad',
+      item: 'Documentación del guarda',
+      value: details.guard.documentationOk ? 'Al día' : 'Pendiente',
+      level: details.guard.documentationOk ? 'conforme' : 'no_conforme',
+    })
+
     rows.push({
       category: 'Personal de seguridad',
       item: 'Carné del guarda',
@@ -74,15 +74,14 @@ function buildEvaluationRows(details: StructuredReportPayload): EvaluationRow[] 
       value: details.guard.accreditationOk ? 'Sí' : 'No',
       level: details.guard.accreditationOk ? 'conforme' : 'no_conforme',
     })
+    const personalRating = details.guard.personalRating ?? 0
+    rows.push({
+      category: 'Personal de seguridad',
+      item: 'Presentación personal',
+      value: `${personalRating}/5`,
+      level: personalRating >= 4 ? 'conforme' : personalRating >= 3 ? 'razonable' : 'no_conforme',
+    })
   }
-
-  const personalRating = details.guard.personalRating ?? 0
-  rows.push({
-    category: 'Personal de seguridad',
-    item: 'Presentación personal',
-    value: `${personalRating}/5`,
-    level: personalRating >= 4 ? 'conforme' : personalRating >= 3 ? 'razonable' : 'no_conforme',
-  })
 
   Object.entries(details.equipment).forEach(([key, value]) => {
     const label = key === 'armament'
@@ -217,15 +216,19 @@ export async function exportReportPdf(report: Report, details: StructuredReportP
   doc.setFontSize(10)
   doc.text(`Generado el ${new Date().toLocaleString('es-CO')}`, 40, 104)
 
+  doc.setTextColor(100, 116, 139)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.text('Estado general', 40, 124)
   doc.setFillColor(...overallColor.fill)
-  doc.roundedRect(430, 58, 125, 28, 8, 8, 'F')
+  doc.roundedRect(110, 108, 132, 28, 8, 8, 'F')
   doc.setTextColor(...overallColor.text)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(12)
-  doc.text(overallColor.label, 492.5, 76, { align: 'center' })
+  doc.text(overallColor.label, 176, 126, { align: 'center' })
 
   autoTable(doc, {
-    startY: 120,
+    startY: 156,
     theme: 'grid',
     styles: {
       fontSize: 9,
@@ -267,8 +270,7 @@ export async function exportReportPdf(report: Report, details: StructuredReportP
     body: [
       ['Razón social', details.clientName],
       ['Supervisor de turno', details.assignedSupervisor?.name || details.generatedBy?.name || 'No asignado'],
-      ['Guarda asignado', details.guard.name],
-      ['Guarda de turno', details.shift?.onDutyGuardName || details.guard.name],
+      ['Guarda de turno', details.serviceType === 'SEGURIDAD_FISICA' ? (details.shift?.onDutyGuardName || details.guard.name || 'No registrado') : 'No aplica'],
       ['Tipo de servicio', details.serviceType === 'MONITOREO' ? 'Monitoreo' : 'Seguridad física'],
       ['Ubicación', report.location],
     ],

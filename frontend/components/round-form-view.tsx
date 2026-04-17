@@ -313,6 +313,34 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
 
   const progress = ((currentStep + 1) / steps.length) * 100
 
+  const handleServiceTypeChange = (value: ServiceType) => {
+    setFormData((current) => {
+      if (value === "MONITOREO") {
+        return {
+          ...current,
+          serviceType: value,
+          guardUserId: "",
+          guardName: "",
+          guardId: "",
+          onDutyGuardName: "",
+          documentationOk: false,
+          guardCardOk: false,
+          accreditationOk: false,
+          personalRating: 0,
+          personalPresentationNote: "",
+        }
+      }
+
+      return {
+        ...current,
+        serviceType: value,
+        shiftConditionNote: "",
+        monitoringVisitNote: "",
+        monitoringPhoto: null,
+      }
+    })
+  }
+
   const updateEquipment = (key: keyof FormData["equipment"], patch: Partial<EquipmentFormItem>) => {
     setFormData((current) => ({
       ...current,
@@ -385,13 +413,15 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
     }).length
 
     const documentAlerts = Object.values(formData.documents).filter((item) => !item.compliant).length
-    const guardAlerts = [
-      !formData.documentationOk,
-      formData.serviceType === "SEGURIDAD_FISICA" && !formData.guardCardOk,
-      formData.serviceType === "SEGURIDAD_FISICA" && !formData.accreditationOk,
-      formData.serviceType === "SEGURIDAD_FISICA" && formData.personalRating > 0 && formData.personalRating < 4,
-      formData.vulnerabilities.trim().length > 0 && formData.vulnerabilities.trim().toLowerCase() !== "ninguna",
-    ].filter(Boolean).length
+    const guardAlerts = formData.serviceType === "SEGURIDAD_FISICA"
+      ? [
+          !formData.documentationOk,
+          !formData.guardCardOk,
+          !formData.accreditationOk,
+          formData.personalRating > 0 && formData.personalRating < 4,
+          formData.vulnerabilities.trim().length > 0 && formData.vulnerabilities.trim().toLowerCase() !== "ninguna",
+        ].filter(Boolean).length
+      : 0
 
     return equipmentAlerts + documentAlerts + guardAlerts
   }
@@ -404,8 +434,20 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
 
     const supervisorRequired = currentUser.role === "admin" ? !formData.supervisor : false
 
-    if (!formData.clientName.trim() || !formData.postName.trim() || !formData.guardUserId || !formData.guardName.trim() || !formData.guardId.trim() || !formData.onDutyGuardName.trim() || supervisorRequired) {
-      toast.error("Completa cliente, puesto, supervisor, guarda asignado, guarda de turno y cédula antes de finalizar")
+    const requiresGuard = formData.serviceType === "SEGURIDAD_FISICA"
+
+    if (!formData.clientName.trim() || !formData.postName.trim() || supervisorRequired) {
+      toast.error("Completa cliente, puesto y supervisor antes de finalizar")
+      return
+    }
+
+    if (requiresGuard && (!formData.guardUserId || !formData.guardId.trim() || !formData.onDutyGuardName.trim())) {
+      toast.error("Completa guarda de turno y cédula antes de finalizar")
+      return
+    }
+
+    if (formData.serviceType === "MONITOREO" && !formData.shiftConditionNote.trim()) {
+      toast.error("Para monitoreo debes registrar la condición del turno")
       return
     }
 
@@ -478,22 +520,22 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
       },
       serviceType: formData.serviceType,
       shift: {
-        assignedGuardName: formData.guardName.trim(),
-        onDutyGuardName: formData.onDutyGuardName.trim(),
-        conditionNote: formData.shiftConditionNote.trim(),
+        assignedGuardName: formData.serviceType === "SEGURIDAD_FISICA" ? formData.onDutyGuardName.trim() : "",
+        onDutyGuardName: formData.serviceType === "SEGURIDAD_FISICA" ? formData.onDutyGuardName.trim() : "",
+        conditionNote: formData.serviceType === "MONITOREO" ? formData.shiftConditionNote.trim() : "",
         monitoringVisitNote: formData.serviceType === "MONITOREO" ? formData.monitoringVisitNote.trim() : "",
         monitoringPhoto: formData.serviceType === "MONITOREO" ? formData.monitoringPhoto : null,
       },
       guard: {
-        userId: formData.guardUserId,
-        name: formData.guardName.trim(),
-        email: selectedGuard?.email,
-        cedula: formData.guardId.trim(),
-        documentationOk: formData.documentationOk,
-        personalRating: formData.personalRating,
+        userId: formData.serviceType === "SEGURIDAD_FISICA" ? formData.guardUserId : undefined,
+        name: formData.serviceType === "SEGURIDAD_FISICA" ? formData.onDutyGuardName.trim() : "No aplica",
+        email: formData.serviceType === "SEGURIDAD_FISICA" ? selectedGuard?.email : undefined,
+        cedula: formData.serviceType === "SEGURIDAD_FISICA" ? formData.guardId.trim() : "No aplica",
+        documentationOk: formData.serviceType === "SEGURIDAD_FISICA" ? formData.documentationOk : true,
+        personalRating: formData.serviceType === "SEGURIDAD_FISICA" ? formData.personalRating : 0,
         guardCardOk: formData.serviceType === "SEGURIDAD_FISICA" ? formData.guardCardOk : undefined,
         accreditationOk: formData.serviceType === "SEGURIDAD_FISICA" ? formData.accreditationOk : undefined,
-        personalPresentationNote: formData.personalPresentationNote.trim(),
+        personalPresentationNote: formData.serviceType === "SEGURIDAD_FISICA" ? formData.personalPresentationNote.trim() : "",
       },
       equipment: normalizedEquipment,
       barrierStatus: formData.barrierStatus || "sin_registro",
@@ -590,7 +632,7 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
 
         <div className="space-y-2">
           <Label>Tipo de servicio</Label>
-          <Select value={formData.serviceType} onValueChange={(value: ServiceType) => setFormData((current) => ({ ...current, serviceType: value }))}>
+          <Select value={formData.serviceType} onValueChange={handleServiceTypeChange}>
             <SelectTrigger className="h-12">
               <SelectValue placeholder="Seleccione el tipo de servicio" />
             </SelectTrigger>
@@ -601,41 +643,38 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
           </Select>
         </div>
 
-        <div className="space-y-2">
-          <Label>Guarda asignado</Label>
-          <Select
-            value={formData.guardUserId}
-            onValueChange={(value) => {
-              const selected = guards.find((item) => item.id === value)
-              setFormData((current) => ({
-                ...current,
-                guardUserId: value,
-                guardName: selected?.name || "",
-                onDutyGuardName: current.onDutyGuardName || selected?.name || "",
-              }))
-            }}
-          >
-            <SelectTrigger className="h-12">
-              <SelectValue placeholder={isLoadingUsers ? "Cargando guardas..." : "Seleccione un guarda"} />
-            </SelectTrigger>
-            <SelectContent>
-              {guards.map((guard) => (
-                <SelectItem key={guard.id} value={guard.id}>{guard.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {formData.guardUserId && <p className="text-sm text-muted-foreground">{guards.find((item) => item.id === formData.guardUserId)?.email}</p>}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="onDutyGuardName">Guarda de turno</Label>
-          <Input id="onDutyGuardName" value={formData.onDutyGuardName} onChange={(event) => setFormData((current) => ({ ...current, onDutyGuardName: event.target.value }))} placeholder="Nombre del guarda en turno" className="h-12" />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="shiftCondition">Condición del turno</Label>
-          <Textarea id="shiftCondition" value={formData.shiftConditionNote} onChange={(event) => setFormData((current) => ({ ...current, shiftConditionNote: event.target.value }))} placeholder="Observación breve sobre el turno, cobertura o servicio" className="min-h-[100px]" />
-        </div>
+        {formData.serviceType === "SEGURIDAD_FISICA" ? (
+          <div className="space-y-2">
+            <Label>Guarda de turno</Label>
+            <Select
+              value={formData.guardUserId}
+              onValueChange={(value) => {
+                const selected = guards.find((item) => item.id === value)
+                setFormData((current) => ({
+                  ...current,
+                  guardUserId: value,
+                  guardName: selected?.name || "",
+                  onDutyGuardName: selected?.name || "",
+                }))
+              }}
+            >
+              <SelectTrigger className="h-12">
+                <SelectValue placeholder={isLoadingUsers ? "Cargando guardas..." : "Seleccione un guarda disponible"} />
+              </SelectTrigger>
+              <SelectContent>
+                {guards.map((guard) => (
+                  <SelectItem key={guard.id} value={guard.id}>{guard.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {formData.guardUserId && <p className="text-sm text-muted-foreground">{guards.find((item) => item.id === formData.guardUserId)?.email}</p>}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Label htmlFor="shiftCondition">Condición del turno</Label>
+            <Textarea id="shiftCondition" value={formData.shiftConditionNote} onChange={(event) => setFormData((current) => ({ ...current, shiftConditionNote: event.target.value }))} placeholder="Describe la condición del turno de monitoreo" className="min-h-[100px]" />
+          </div>
+        )}
       </CardContent>
     </Card>
   )
@@ -647,24 +686,24 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
         <CardDescription>Datos del guarda y captura condicional según el tipo de servicio.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className="space-y-2">
-          <Label htmlFor="guardId">Cédula del guarda</Label>
-          <Input id="guardId" value={formData.guardId} onChange={(event) => setFormData((current) => ({ ...current, guardId: event.target.value }))} placeholder="Número de identificación" className="h-12" />
-        </div>
-
-        <div className="space-y-2">
-          <Label>Documentación al día</Label>
-          <Select value={formData.documentationOk ? "si" : "no"} onValueChange={(value) => setFormData((current) => ({ ...current, documentationOk: value === "si" }))}>
-            <SelectTrigger className="h-12"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="si">Sí</SelectItem>
-              <SelectItem value="no">No</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
         {formData.serviceType === "SEGURIDAD_FISICA" ? (
           <>
+            <div className="space-y-2">
+              <Label htmlFor="guardId">Cédula del guarda</Label>
+              <Input id="guardId" value={formData.guardId} onChange={(event) => setFormData((current) => ({ ...current, guardId: event.target.value }))} placeholder="Número de identificación" className="h-12" />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Documentación al día</Label>
+              <Select value={formData.documentationOk ? "si" : "no"} onValueChange={(value) => setFormData((current) => ({ ...current, documentationOk: value === "si" }))}>
+                <SelectTrigger className="h-12"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="si">Sí</SelectItem>
+                  <SelectItem value="no">No</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <Label>Carné del guarda</Label>
               <Select value={formData.guardCardOk ? "si" : "no"} onValueChange={(value) => setFormData((current) => ({ ...current, guardCardOk: value === "si" }))}>
@@ -894,8 +933,11 @@ export function RoundFormView({ currentUser, onComplete, onCancel }: RoundFormVi
           <p><span className="font-medium text-foreground">Cliente:</span> {formData.clientName || "No especificado"}</p>
           <p><span className="font-medium text-foreground">Puesto:</span> {formData.postName || "No especificado"}</p>
           <p><span className="font-medium text-foreground">Tipo de servicio:</span> {formData.serviceType === "MONITOREO" ? "Monitoreo" : "Seguridad física"}</p>
-          <p><span className="font-medium text-foreground">Guarda asignado:</span> {formData.guardName || "No especificado"}</p>
-          <p><span className="font-medium text-foreground">Guarda de turno:</span> {formData.onDutyGuardName || "No especificado"}</p>
+          {formData.serviceType === "SEGURIDAD_FISICA" ? (
+            <p><span className="font-medium text-foreground">Guarda de turno:</span> {formData.onDutyGuardName || "No especificado"}</p>
+          ) : (
+            <p><span className="font-medium text-foreground">Condición del turno:</span> {formData.shiftConditionNote || "No especificada"}</p>
+          )}
           <p><span className="font-medium text-foreground">Evidencias:</span> {collectEvidencePhotos().length}</p>
         </div>
       </CardContent>

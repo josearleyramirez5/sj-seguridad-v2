@@ -381,7 +381,7 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+      <DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{details.clientName}</DialogTitle>
           <DialogDescription>
@@ -389,7 +389,7 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div className="flex flex-wrap gap-2">
             <Badge className={badge.className}>{badge.label}</Badge>
             <Badge variant="outline">{report.alertCount} alertas</Badge>
@@ -401,24 +401,48 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
           </div>
 
           <Card className="border-0 shadow-sm">
+            <CardContent className="grid gap-3 p-4 text-sm md:grid-cols-4">
+              <div className="rounded-xl bg-muted/50 p-3">
+                <p className="text-muted-foreground">Cliente</p>
+                <p className="font-semibold">{details.clientName}</p>
+              </div>
+              <div className="rounded-xl bg-muted/50 p-3">
+                <p className="text-muted-foreground">Puesto</p>
+                <p className="font-semibold">{details.postName}</p>
+              </div>
+              <div className="rounded-xl bg-muted/50 p-3">
+                <p className="text-muted-foreground">Fecha</p>
+                <p className="font-semibold">{formatDateTime(report.createdAt)}</p>
+              </div>
+              <div className="rounded-xl bg-muted/50 p-3">
+                <p className="text-muted-foreground">Ubicación</p>
+                <p className="font-semibold">{report.location}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base"><FileText className="h-4 w-4 text-primary" /> Servicio y turno</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-3 text-sm md:grid-cols-2">
+            <CardContent className="grid gap-3 text-sm md:grid-cols-2 lg:grid-cols-3">
               <div className="rounded-lg bg-muted/50 p-3">
                 <p className="text-muted-foreground">Tipo de servicio</p>
                 <p className="font-medium">{details.serviceType === "MONITOREO" ? "Monitoreo" : "Seguridad física"}</p>
               </div>
-              <div className="rounded-lg bg-muted/50 p-3">
-                <p className="text-muted-foreground">Guarda de turno</p>
-                <p className="font-medium">{details.shift?.onDutyGuardName || details.guard.name}</p>
-              </div>
-              <div className="rounded-lg bg-muted/50 p-3 md:col-span-2">
-                <p className="text-muted-foreground">Condición del turno</p>
-                <p className="font-medium">{details.shift?.conditionNote || "Sin observaciones del turno."}</p>
-              </div>
+              {details.serviceType === "SEGURIDAD_FISICA" ? (
+                <div className="rounded-lg bg-muted/50 p-3">
+                  <p className="text-muted-foreground">Guarda de turno</p>
+                  <p className="font-medium">{details.shift?.onDutyGuardName || details.guard.name || "No registrado"}</p>
+                </div>
+              ) : (
+                <div className="rounded-lg bg-muted/50 p-3 md:col-span-2 lg:col-span-2">
+                  <p className="text-muted-foreground">Condición del turno</p>
+                  <p className="font-medium">{details.shift?.conditionNote || "Sin observaciones del turno."}</p>
+                </div>
+              )}
               {details.serviceType === "MONITOREO" && (
-                <div className="rounded-lg bg-muted/50 p-3 md:col-span-2">
+                <div className="rounded-lg bg-muted/50 p-3 md:col-span-2 lg:col-span-3">
                   <p className="text-muted-foreground">Detalle de la visita de monitoreo</p>
                   <p className="font-medium">{details.shift?.monitoringVisitNote || "Sin detalle registrado."}</p>
                 </div>
@@ -428,9 +452,9 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
 
           <Card className="border-0 shadow-sm">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base"><User className="h-4 w-4 text-primary" /> Responsables</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-base"><User className="h-4 w-4 text-primary" /> Equipo responsable</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-3 text-sm md:grid-cols-3">
+            <CardContent className="grid gap-3 text-sm md:grid-cols-2 lg:grid-cols-3">
               <div className="rounded-lg bg-muted/50 p-3">
                 <p className="text-muted-foreground">Supervisor asignado</p>
                 <p className="font-medium">{details.assignedSupervisor?.name || "No asignado"}</p>
@@ -441,13 +465,13 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
                 <p className="font-medium">{details.generatedBy?.name || "No registrado"}</p>
                 <p className="text-muted-foreground">{details.generatedBy?.email || "Sin correo"}</p>
               </div>
-              <div className="rounded-lg bg-muted/50 p-3">
-                <p className="text-muted-foreground">Guarda</p>
-                <p className="font-medium">{details.guard.name}</p>
-                <p className="text-muted-foreground">Cédula: {details.guard.cedula}</p>
-              </div>
               {details.serviceType === "SEGURIDAD_FISICA" && (
                 <>
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <p className="text-muted-foreground">Guarda de turno</p>
+                    <p className="font-medium">{details.guard.name || details.shift?.onDutyGuardName || "No registrado"}</p>
+                    <p className="text-muted-foreground">Cédula: {details.guard.cedula}</p>
+                  </div>
                   <div className="rounded-lg bg-muted/50 p-3">
                     <p className="text-muted-foreground">Carné del guarda</p>
                     <p className="font-medium">{details.guard.guardCardOk ? "Sí" : "No"}</p>
@@ -462,6 +486,12 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
                     <p className="text-muted-foreground">{details.guard.personalPresentationNote || "Sin observaciones adicionales."}</p>
                   </div>
                 </>
+              )}
+              {details.serviceType === "MONITOREO" && (
+                <div className="rounded-lg bg-muted/50 p-3 md:col-span-2 lg:col-span-1">
+                  <p className="text-muted-foreground">Cobertura</p>
+                  <p className="font-medium">Servicio de monitoreo sin guarda asignado</p>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -590,6 +620,7 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
 
 export function ReportsView({ user }: ReportsViewProps) {
   const [reports, setReports] = useState<Report[]>([])
+  const [guards, setGuards] = useState<AppUser[]>([])
   const [selectedReport, setSelectedReport] = useState<Report | null>(null)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<FilterStatus>("all")
@@ -684,9 +715,85 @@ export function ReportsView({ user }: ReportsViewProps) {
     })
   }
 
+  const handleStructuredServiceTypeChange = (value: ServiceType) => {
+    updateStructuredPayload((payload) => {
+      if (value === "MONITOREO") {
+        return {
+          ...payload,
+          serviceType: value,
+          shift: {
+            ...payload.shift,
+            assignedGuardName: "",
+            onDutyGuardName: "",
+          },
+          guard: {
+            ...payload.guard,
+            userId: undefined,
+            name: "",
+            email: undefined,
+            cedula: "",
+            documentationOk: false,
+            personalRating: 0,
+            guardCardOk: false,
+            accreditationOk: false,
+            personalPresentationNote: "",
+          },
+        }
+      }
+
+      return {
+        ...payload,
+        serviceType: value,
+        shift: {
+          ...payload.shift,
+          conditionNote: "",
+          monitoringVisitNote: "",
+          monitoringPhoto: null,
+        },
+      }
+    })
+  }
+
+  const handleStructuredGuardChange = (guardId: string) => {
+    const selectedGuard = guards.find((item) => item.id === guardId)
+
+    updateStructuredPayload((payload) => ({
+      ...payload,
+      shift: {
+        ...payload.shift,
+        assignedGuardName: selectedGuard?.name || "",
+        onDutyGuardName: selectedGuard?.name || "",
+      },
+      guard: {
+        ...payload.guard,
+        userId: selectedGuard?.id,
+        name: selectedGuard?.name || "",
+        email: selectedGuard?.email,
+      },
+    }))
+  }
+
   useEffect(() => {
     void loadReports()
   }, [])
+
+  useEffect(() => {
+    const loadGuards = async () => {
+      if (!canManageReports) {
+        return
+      }
+
+      try {
+        const guardUsers = await apiService.getUsersByRole("GUARD")
+        setGuards(guardUsers)
+      } catch (error) {
+        console.error("Error loading guards for reports editor:", error)
+        toast.error(error instanceof Error ? error.message : "No fue posible cargar los guardas disponibles")
+      }
+    }
+
+    void loadGuards()
+  }, [canManageReports])
 
   const loadReports = async () => {
     try {
@@ -753,13 +860,13 @@ export function ReportsView({ user }: ReportsViewProps) {
         return
       }
 
-      if (!editorState.payload.guard.name.trim() || !editorState.payload.guard.cedula.trim()) {
-        toast.error("Completa nombre y cédula del guarda antes de guardar")
+      if (editorState.payload.serviceType === "SEGURIDAD_FISICA" && (!editorState.payload.guard.userId || !editorState.payload.guard.cedula.trim() || !editorState.payload.shift?.onDutyGuardName.trim())) {
+        toast.error("Completa guarda de turno y cédula antes de guardar")
         return
       }
 
-      if (!editorState.payload.shift?.assignedGuardName.trim() || !editorState.payload.shift?.onDutyGuardName.trim()) {
-        toast.error("Completa guarda asignado y guarda de turno antes de guardar")
+      if (editorState.payload.serviceType === "MONITOREO" && !editorState.payload.shift?.conditionNote.trim()) {
+        toast.error("Para monitoreo debes registrar la condición del turno")
         return
       }
 
@@ -983,7 +1090,7 @@ export function ReportsView({ user }: ReportsViewProps) {
                   <div className="grid gap-2 text-sm text-muted-foreground">
                     <div className="flex items-center gap-2"><MapPin className="h-4 w-4" /><span>{report.location}</span></div>
                     <div className="flex items-center gap-2"><Clock className="h-4 w-4" /><span>{formatDateTime(report.createdAt)}</span></div>
-                    <div className="flex items-center gap-2"><User className="h-4 w-4" /><span>{details.guard.name}</span></div>
+                    <div className="flex items-center gap-2"><User className="h-4 w-4" /><span>{details.serviceType === "SEGURIDAD_FISICA" ? (details.shift?.onDutyGuardName || details.guard.name || "Sin guarda") : "Servicio de monitoreo"}</span></div>
                   </div>
 
                   <div className="rounded-lg bg-muted/50 p-3 text-sm">
@@ -1056,10 +1163,7 @@ export function ReportsView({ user }: ReportsViewProps) {
                       <Label>Tipo de servicio</Label>
                       <Select
                         value={editorState.payload?.serviceType || "SEGURIDAD_FISICA"}
-                        onValueChange={(value: ServiceType) => updateStructuredPayload((payload) => ({
-                          ...payload,
-                          serviceType: value,
-                        }))}
+                        onValueChange={handleStructuredServiceTypeChange}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Tipo de servicio" />
@@ -1080,52 +1184,39 @@ export function ReportsView({ user }: ReportsViewProps) {
                         <CardTitle className="text-base">Servicio y turno</CardTitle>
                       </CardHeader>
                       <CardContent className="grid gap-3 md:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label htmlFor="assignedGuardName">Guarda asignado</Label>
-                          <Input
-                            id="assignedGuardName"
-                            value={editorState.payload.shift?.assignedGuardName || ""}
-                            onChange={(event) => updateStructuredPayload((payload) => ({
-                              ...payload,
-                              shift: {
-                                ...payload.shift,
-                                assignedGuardName: event.target.value,
-                              },
-                            }))}
-                            placeholder="Guarda asignado"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="onDutyGuardName">Guarda de turno</Label>
-                          <Input
-                            id="onDutyGuardName"
-                            value={editorState.payload.shift?.onDutyGuardName || ""}
-                            onChange={(event) => updateStructuredPayload((payload) => ({
-                              ...payload,
-                              shift: {
-                                ...payload.shift,
-                                onDutyGuardName: event.target.value,
-                              },
-                            }))}
-                            placeholder="Guarda de turno"
-                          />
-                        </div>
-                        <div className="space-y-2 md:col-span-2">
-                          <Label htmlFor="shiftConditionNote">Condición del turno</Label>
-                          <Textarea
-                            id="shiftConditionNote"
-                            value={editorState.payload.shift?.conditionNote || ""}
-                            onChange={(event) => updateStructuredPayload((payload) => ({
-                              ...payload,
-                              shift: {
-                                ...payload.shift,
-                                conditionNote: event.target.value,
-                              },
-                            }))}
-                            placeholder="Condición general del turno"
-                            className="min-h-[100px]"
-                          />
-                        </div>
+                        {editorState.payload.serviceType === "SEGURIDAD_FISICA" ? (
+                          <div className="space-y-2 md:col-span-2">
+                            <Label>Guarda de turno</Label>
+                            <Select value={editorState.payload.guard.userId || ""} onValueChange={handleStructuredGuardChange}>
+                              <SelectTrigger>
+                                <SelectValue placeholder={guards.length > 0 ? "Seleccione un guarda disponible" : "No hay guardas cargados"} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {guards.map((guard) => (
+                                  <SelectItem key={guard.id} value={guard.id}>{guard.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {editorState.payload.guard.email && <p className="text-sm text-muted-foreground">{editorState.payload.guard.email}</p>}
+                          </div>
+                        ) : (
+                          <div className="space-y-2 md:col-span-2">
+                            <Label htmlFor="shiftConditionNote">Condición del turno</Label>
+                            <Textarea
+                              id="shiftConditionNote"
+                              value={editorState.payload.shift?.conditionNote || ""}
+                              onChange={(event) => updateStructuredPayload((payload) => ({
+                                ...payload,
+                                shift: {
+                                  ...payload.shift,
+                                  conditionNote: event.target.value,
+                                },
+                              }))}
+                              placeholder="Condición general del turno de monitoreo"
+                              className="min-h-[100px]"
+                            />
+                          </div>
+                        )}
                         {editorState.payload.serviceType === "MONITOREO" && (
                           <>
                             <div className="space-y-2 md:col-span-2">
@@ -1172,59 +1263,48 @@ export function ReportsView({ user }: ReportsViewProps) {
 
                     <Card className="border-0 shadow-sm">
                       <CardHeader>
-                        <CardTitle className="text-base">Guarda asignado</CardTitle>
+                        <CardTitle className="text-base">Personal de seguridad</CardTitle>
                       </CardHeader>
                       <CardContent className="grid gap-3 md:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label htmlFor="guardName">Nombre</Label>
-                          <Input
-                            id="guardName"
-                            value={editorState.payload.guard.name}
-                            onChange={(event) => updateStructuredPayload((payload) => ({
-                              ...payload,
-                              guard: {
-                                ...payload.guard,
-                                name: event.target.value,
-                              },
-                            }))}
-                            placeholder="Nombre del guarda"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="guardCedula">Cédula</Label>
-                          <Input
-                            id="guardCedula"
-                            value={editorState.payload.guard.cedula}
-                            onChange={(event) => updateStructuredPayload((payload) => ({
-                              ...payload,
-                              guard: {
-                                ...payload.guard,
-                                cedula: event.target.value,
-                              },
-                            }))}
-                            placeholder="Documento"
-                          />
-                        </div>
-                        <div className="rounded-lg bg-muted/50 p-3 md:col-span-2">
-                          <div className="flex items-center justify-between gap-4">
-                            <div>
-                              <p className="font-medium">Documentación al día</p>
-                              <p className="text-sm text-muted-foreground">Marca si la documentación del guarda está completa.</p>
-                            </div>
-                            <Switch
-                              checked={editorState.payload.guard.documentationOk}
-                              onCheckedChange={(checked) => updateStructuredPayload((payload) => ({
-                                ...payload,
-                                guard: {
-                                  ...payload.guard,
-                                  documentationOk: checked,
-                                },
-                              }))}
-                            />
-                          </div>
-                        </div>
-                        {editorState.payload.serviceType === "SEGURIDAD_FISICA" && (
+                        {editorState.payload.serviceType === "SEGURIDAD_FISICA" ? (
                           <>
+                            <div className="space-y-2">
+                              <Label htmlFor="guardCedula">Cédula</Label>
+                              <Input
+                                id="guardCedula"
+                                value={editorState.payload.guard.cedula}
+                                onChange={(event) => updateStructuredPayload((payload) => ({
+                                  ...payload,
+                                  guard: {
+                                    ...payload.guard,
+                                    cedula: event.target.value,
+                                  },
+                                }))}
+                                placeholder="Documento"
+                              />
+                            </div>
+                            <div className="rounded-lg bg-muted/50 p-3">
+                              <p className="text-sm text-muted-foreground">Guarda de turno</p>
+                              <p className="font-medium">{editorState.payload.guard.name || "No seleccionado"}</p>
+                            </div>
+                            <div className="rounded-lg bg-muted/50 p-3 md:col-span-2">
+                              <div className="flex items-center justify-between gap-4">
+                                <div>
+                                  <p className="font-medium">Documentación al día</p>
+                                  <p className="text-sm text-muted-foreground">Marca si la documentación del guarda está completa.</p>
+                                </div>
+                                <Switch
+                                  checked={editorState.payload.guard.documentationOk}
+                                  onCheckedChange={(checked) => updateStructuredPayload((payload) => ({
+                                    ...payload,
+                                    guard: {
+                                      ...payload.guard,
+                                      documentationOk: checked,
+                                    },
+                                  }))}
+                                />
+                              </div>
+                            </div>
                             <div className="rounded-lg bg-muted/50 p-3">
                               <div className="flex items-center justify-between gap-4">
                                 <div>
@@ -1296,6 +1376,11 @@ export function ReportsView({ user }: ReportsViewProps) {
                               />
                             </div>
                           </>
+                        ) : (
+                          <div className="rounded-lg bg-muted/50 p-3 md:col-span-2">
+                            <p className="font-medium">Servicio de monitoreo</p>
+                            <p className="text-sm text-muted-foreground">Esta modalidad no asigna guarda de turno dentro del reporte.</p>
+                          </div>
                         )}
                       </CardContent>
                     </Card>
