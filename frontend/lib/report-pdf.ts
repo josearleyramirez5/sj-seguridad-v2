@@ -204,7 +204,6 @@ export async function exportReportPdf(report: Report, details: StructuredReportP
   const doc = new jsPDF({ unit: 'pt', format: 'a4' })
   const rows = buildEvaluationRows(details)
   const overall = computeOverallEvaluation(rows, report.alertCount)
-  const overallColor = COLORS[overall.level]
 
   drawBrand(doc)
 
@@ -216,19 +215,8 @@ export async function exportReportPdf(report: Report, details: StructuredReportP
   doc.setFontSize(10)
   doc.text(`Generado el ${new Date().toLocaleString('es-CO')}`, 40, 104)
 
-  doc.setTextColor(100, 116, 139)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.text('Estado general', 40, 124)
-  doc.setFillColor(...overallColor.fill)
-  doc.roundedRect(110, 108, 132, 28, 8, 8, 'F')
-  doc.setTextColor(...overallColor.text)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(12)
-  doc.text(overallColor.label, 176, 126, { align: 'center' })
-
   autoTable(doc, {
-    startY: 156,
+    startY: 128,
     theme: 'grid',
     styles: {
       fontSize: 9,
