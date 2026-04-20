@@ -381,7 +381,7 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[94vh] w-[min(96vw,1320px)] max-w-none overflow-y-auto p-0">
+      <DialogContent className="h-[94vh] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto p-0 sm:w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-2rem)] lg:w-[calc(100vw-4rem)] lg:max-w-6xl xl:max-w-[1280px]">
         <DialogHeader className="border-b px-6 pb-4 pt-6 pr-14">
           <DialogTitle>{details.clientName}</DialogTitle>
           <DialogDescription>
@@ -401,20 +401,20 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
           </div>
 
           <Card className="border-0 shadow-sm">
-            <CardContent className="grid gap-4 p-5 text-sm sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-xl bg-muted/50 p-4">
+            <CardContent className="grid gap-4 p-5 text-sm md:grid-cols-2 2xl:grid-cols-4">
+              <div className="min-w-0 rounded-xl bg-muted/50 p-4 break-words">
                 <p className="text-muted-foreground">Cliente</p>
                 <p className="font-semibold">{details.clientName}</p>
               </div>
-              <div className="rounded-xl bg-muted/50 p-4">
+              <div className="min-w-0 rounded-xl bg-muted/50 p-4 break-words">
                 <p className="text-muted-foreground">Puesto</p>
                 <p className="font-semibold">{details.postName}</p>
               </div>
-              <div className="rounded-xl bg-muted/50 p-4">
+              <div className="min-w-0 rounded-xl bg-muted/50 p-4 break-words">
                 <p className="text-muted-foreground">Fecha</p>
                 <p className="font-semibold">{formatDateTime(report.createdAt)}</p>
               </div>
-              <div className="rounded-xl bg-muted/50 p-4">
+              <div className="min-w-0 rounded-xl bg-muted/50 p-4 break-words">
                 <p className="text-muted-foreground">Ubicación</p>
                 <p className="font-semibold">{report.location}</p>
               </div>
@@ -425,24 +425,24 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base"><FileText className="h-4 w-4 text-primary" /> Servicio y turno</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-lg bg-muted/50 p-4">
+            <CardContent className="grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-3">
+              <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                 <p className="text-muted-foreground">Tipo de servicio</p>
                 <p className="font-medium">{details.serviceType === "MONITOREO" ? "Monitoreo" : "Seguridad física"}</p>
               </div>
               {details.serviceType === "SEGURIDAD_FISICA" ? (
-                <div className="rounded-lg bg-muted/50 p-4 md:col-span-1 xl:col-span-2">
+                <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words md:col-span-1 xl:col-span-2">
                   <p className="text-muted-foreground">Guarda de turno</p>
                   <p className="font-medium">{details.shift?.onDutyGuardName || details.guard.name || "No registrado"}</p>
                 </div>
               ) : (
-                <div className="rounded-lg bg-muted/50 p-4 md:col-span-2 xl:col-span-3">
+                <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words md:col-span-2 xl:col-span-3">
                   <p className="text-muted-foreground">Condición del turno</p>
                   <p className="font-medium">{details.shift?.conditionNote || "Sin observaciones del turno."}</p>
                 </div>
               )}
               {details.serviceType === "MONITOREO" && (
-                <div className="rounded-lg bg-muted/50 p-4 md:col-span-2 xl:col-span-4">
+                <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words md:col-span-2 xl:col-span-3">
                   <p className="text-muted-foreground">Detalle de la visita de monitoreo</p>
                   <p className="font-medium">{details.shift?.monitoringVisitNote || "Sin detalle registrado."}</p>
                 </div>
@@ -454,33 +454,33 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base"><User className="h-4 w-4 text-primary" /> Equipo responsable</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-lg bg-muted/50 p-4">
+            <CardContent className="grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-3">
+              <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                 <p className="text-muted-foreground">Supervisor asignado</p>
                 <p className="font-medium">{details.assignedSupervisor?.name || "No asignado"}</p>
                 <p className="text-muted-foreground">{details.assignedSupervisor?.email || "Sin correo"}</p>
               </div>
-              <div className="rounded-lg bg-muted/50 p-4">
+              <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                 <p className="text-muted-foreground">Generado por</p>
                 <p className="font-medium">{details.generatedBy?.name || "No registrado"}</p>
                 <p className="text-muted-foreground">{details.generatedBy?.email || "Sin correo"}</p>
               </div>
               {details.serviceType === "SEGURIDAD_FISICA" && (
                 <>
-                  <div className="rounded-lg bg-muted/50 p-4">
+                  <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                     <p className="text-muted-foreground">Guarda de turno</p>
                     <p className="font-medium">{details.guard.name || details.shift?.onDutyGuardName || "No registrado"}</p>
                     <p className="text-muted-foreground">Cédula: {details.guard.cedula}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-4">
+                  <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                     <p className="text-muted-foreground">Carné del guarda</p>
                     <p className="font-medium">{details.guard.guardCardOk ? "Sí" : "No"}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-4">
+                  <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                     <p className="text-muted-foreground">Acreditación vigente</p>
                     <p className="font-medium">{details.guard.accreditationOk ? "Sí" : "No"}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-4 md:col-span-2 xl:col-span-4">
+                  <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words md:col-span-2 xl:col-span-3">
                     <p className="text-muted-foreground">Presentación personal</p>
                     <p className="font-medium">{details.guard.personalRating}/5</p>
                     <p className="text-muted-foreground">{details.guard.personalPresentationNote || "Sin observaciones adicionales."}</p>
@@ -488,7 +488,7 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
                 </>
               )}
               {details.serviceType === "MONITOREO" && (
-                <div className="rounded-lg bg-muted/50 p-4 md:col-span-2 xl:col-span-2">
+                <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words md:col-span-2 xl:col-span-2">
                   <p className="text-muted-foreground">Cobertura</p>
                   <p className="font-medium">Servicio de monitoreo sin guarda asignado</p>
                 </div>
@@ -502,7 +502,7 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
             </CardHeader>
             <CardContent className="grid gap-4 text-sm md:grid-cols-2 xl:grid-cols-3">
               {equipment.length > 0 ? equipment.map((item) => (
-                <div key={item.key} className="rounded-lg bg-muted/50 p-4">
+                <div key={item.key} className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                   <p className="font-medium">{item.label}</p>
                   <p className="text-muted-foreground">Disponibilidad: {item.availability?.toUpperCase() || "N/A"}</p>
                   <p className="text-muted-foreground">Estado: {item.condition || "na"}</p>
@@ -518,22 +518,22 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
               <CardTitle className="flex items-center gap-2 text-base"><MapPin className="h-4 w-4 text-primary" /> Instalaciones</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm">
-              <div className="rounded-lg bg-muted/50 p-4">
+              <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                 <p className="text-muted-foreground">Barreras perimetrales</p>
                 <p className="font-medium capitalize">{details.barrierStatus.replaceAll("_", " ")}</p>
               </div>
-              <div className="rounded-lg bg-muted/50 p-4">
+              <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                 <p className="text-muted-foreground">Vulnerabilidades</p>
                 <p className="font-medium">{details.vulnerabilities}</p>
               </div>
               {details.installationPhoto && (
-                <div className="rounded-lg bg-muted/50 p-4">
+                <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                   <p className="mb-2 text-muted-foreground">Foto de instalaciones</p>
                   <img src={details.installationPhoto.dataUrl} alt={details.installationPhoto.name || "Instalaciones"} className="aspect-video w-full rounded-lg object-cover" />
                 </div>
               )}
               {details.gps && (
-                <div className="rounded-lg bg-muted/50 p-4">
+                <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                   <p className="text-muted-foreground">Ubicación GPS</p>
                   <p className="font-medium">Lat {details.gps.lat.toFixed(5)} | Lng {details.gps.lng.toFixed(5)}</p>
                 </div>
@@ -546,9 +546,9 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
               <CardTitle className="flex items-center gap-2 text-base"><FileText className="h-4 w-4 text-primary" /> Documentación y observaciones</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4">
                 {documents.length > 0 ? documents.map((item) => (
-                  <div key={item.key} className="rounded-lg bg-muted/50 px-4 py-4">
+                  <div key={item.key} className="min-w-0 rounded-lg bg-muted/50 px-4 py-4 break-words">
                     <div className="flex items-center justify-between gap-3">
                       <span>{item.label}</span>
                       <Badge variant={item.value ? "default" : "outline"}>{item.evidence.status === "cumple" ? "Cumple" : "No cumple"}</Badge>
@@ -558,20 +558,20 @@ function ReportDetail({ report, user, onClose, onReportUpdated }: ReportDetailPr
                   </div>
                 )) : <p className="text-muted-foreground">Sin información documental.</p>}
               </div>
-              <div className="rounded-lg bg-muted/50 p-4">
+              <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                 <p className="text-muted-foreground">Reporte de novedades</p>
                 <p className="font-medium">{details.securityNotes?.novelties || "Sin novedades registradas."}</p>
               </div>
-              <div className="rounded-lg bg-muted/50 p-4">
+              <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                 <p className="text-muted-foreground">Sugerencias de seguridad</p>
                 <p className="font-medium">{details.securityNotes?.suggestions || "Sin sugerencias registradas."}</p>
               </div>
-              <div className="rounded-lg bg-muted/50 p-4">
+              <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                 <p className="text-muted-foreground">Observaciones finales</p>
                 <p className="font-medium">{details.finalObservations}</p>
               </div>
               {(details.guardObservation || canAddObservation) && (
-                <div className="rounded-lg bg-muted/50 p-4">
+                <div className="min-w-0 rounded-lg bg-muted/50 p-4 break-words">
                   <p className="text-muted-foreground">Observación del guarda</p>
                   {canAddObservation ? (
                     <div className="space-y-3">
